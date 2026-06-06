@@ -120,6 +120,7 @@ resource "cloudflare_worker_script" "api_gateway" {
   account_id = var.account_id
   name       = "demo-api-gateway"
   content    = file("${path.module}/workers/api-gateway.js")
+  module     = true
 
   kv_namespace_binding {
     name         = "SESSIONS"
@@ -147,6 +148,7 @@ resource "cloudflare_worker_script" "products_api" {
   account_id = var.account_id
   name       = "demo-products-api"
   content    = file("${path.module}/workers/products-api.js")
+  module     = true
 
   d1_database_binding {
     name        = "DB"
@@ -164,6 +166,7 @@ resource "cloudflare_worker_script" "order_processor" {
   account_id = var.account_id
   name       = "demo-order-processor"
   content    = file("${path.module}/workers/order-processor.js")
+  module     = true
 
   d1_database_binding {
     name        = "DB"
@@ -181,6 +184,7 @@ resource "cloudflare_worker_script" "admin_panel" {
   account_id = var.account_id
   name       = "demo-admin-panel"
   content    = file("${path.module}/workers/admin-panel.js")
+  module     = true
 
   d1_database_binding {
     name        = "DB"
