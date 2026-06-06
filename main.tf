@@ -133,6 +133,17 @@ resource "cloudflare_worker_script" "api_gateway" {
     binding = "ORDER_QUEUE"
     queue   = cloudflare_queue.orders.name
   }
+
+  service_binding {
+    name        = "PRODUCTS_API"
+    service     = cloudflare_worker_script.products_api.name
+    environment = "production"
+  }
+
+  plain_text_binding {
+    name = "ZONE_NAME"
+    text = var.zone_name
+  }
 }
 
 # Products API Worker
@@ -191,12 +202,6 @@ resource "cloudflare_worker_script" "admin_panel" {
   plain_text_binding {
     name = "ZONE_NAME"
     text = var.zone_name
-  }
-
-  service_binding {
-    name        = "PRODUCTS_API"
-    service     = cloudflare_worker_script.products_api.name
-    environment = "production"
   }
 }
 
