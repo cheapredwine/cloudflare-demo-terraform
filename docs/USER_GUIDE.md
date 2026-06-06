@@ -1,15 +1,17 @@
 # Cloudflare Demo Platform - User Guide
 
-Complete guide for deploying, managing, and demoing the Cloudflare edge computing platform.
+Complete guide for deploying, managing, and demoing the Cloudflare edge computing platform to customers.
 
 ## 📋 Table of Contents
 
 - [Quick Start](#quick-start)
 - [Demo Scenarios](#demo-scenarios)
+- [Customer Demo Flows](#customer-demo-flows)
 - [API Reference](#api-reference)
 - [Management](#management)
 - [Troubleshooting](#troubleshooting)
 - [Cost Management](#cost-management)
+- [Sales Tips & Positioning](#sales-tips--positioning)
 
 ## 🚀 Quick Start
 
@@ -133,6 +135,58 @@ zone_name           = "demo.your-company.com"
 # Fresh start - full redeploy
 ./run-demo.sh fresh
 ```
+
+## 🎯 Customer Demo Flows
+
+### For Developers/CTOs (15 mins)
+**Focus:** Development speed, modern architecture, scalability
+
+**Opening:**
+> "What if I told you that you could deploy a complete application backend globally in 2 minutes, with zero servers to manage?"
+
+**Flow:**
+1. Architecture overview (3 mins) - Show diagram, explain edge-first
+2. Live deployment (4 mins) - Deploy while explaining resources
+3. Code walkthrough (3 mins) - Show workers/api-gateway.js
+4. Live testing (2 mins) - API calls, admin panel
+5. Scale discussion (3 mins) - Global reach, performance
+
+**Key Points:**
+- Edge-native development patterns
+- 0ms cold starts vs 100-1000ms serverless
+- Integrated platform vs 10+ services
+
+### For Business/Product (8 mins)
+**Focus:** Time-to-market, cost efficiency, global reach
+
+**Opening:**
+> "Traditional cloud infrastructure takes weeks to set up and months to scale globally. Let me show you a different approach."
+
+**Flow:**
+1. Problem statement (2 mins) - Traditional complexity
+2. Solution demo (3 mins) - Deploy while talking
+3. Business impact (3 mins) - Time/cost/scale benefits
+
+**Key Points:**
+- Weeks → Minutes deployment
+- Pay-per-request vs idle servers
+- Instant global distribution
+
+### For Operations/DevOps (10 mins)
+**Focus:** Infrastructure management, scaling, monitoring
+
+**Opening:**
+> "Imagine never having to think about servers, scaling, or maintenance again."
+
+**Flow:**
+1. Current challenges (2 mins)
+2. Demo deployment (4 mins) - Zero infrastructure management
+3. Operational benefits (4 mins) - Auto-scaling, monitoring
+
+**Key Points:**
+- Zero server management
+- Built-in observability
+- Automatic global scaling
 
 ## 📚 API Reference
 
@@ -420,5 +474,103 @@ zone_name = "demo3.company.com"  # Customer POC
 - **Terraform Errors:** Review terraform logs
 - **Cloudflare Issues:** Check Cloudflare status page
 - **Demo Questions:** See agent documentation
+
+## 🚀 Sales Tips & Positioning
+
+### Target Audiences
+
+**Developers/CTOs:**
+- **Pain:** Complex infrastructure, slow deployments, scaling challenges
+- **Message:** Modern development platform, instant global scale
+- **Demo:** Code walkthrough, live deployment, performance comparison
+
+**Operations/DevOps:**
+- **Pain:** Server management, capacity planning, multi-region complexity  
+- **Message:** Zero infrastructure management, built-in scaling
+- **Demo:** Deployment speed, automatic scaling, monitoring
+
+**Business/Product:**
+- **Pain:** Time-to-market, development costs, global expansion
+- **Message:** Speed to market, predictable costs, instant global reach
+- **Demo:** Business impact focus, cost comparison
+
+### Key Talking Points
+
+**Opening Hooks:**
+- "Deploy a complete application backend globally in 2 minutes"
+- "Most companies spend 6 months building infrastructure - we'll do it now"
+- "What if you never had to think about servers again?"
+
+**Technical Differentiators:**
+- **Edge-Native:** Code runs in 300+ cities, not 3-5 regions
+- **Zero Cold Starts:** 0ms vs 100-1000ms serverless functions
+- **Integrated Platform:** One platform vs 10+ cloud services
+- **Global State:** Built-in distributed storage
+
+**Business Value:**
+- **Speed:** 3-6 months infrastructure → 2 minutes deployment
+- **Scale:** Instant global deployment vs complex multi-region
+- **Cost:** Pay-per-request vs idle server costs
+- **Focus:** Build features, not infrastructure
+
+### Competitive Positioning
+
+**vs AWS Lambda + API Gateway:**
+- Cold starts: 0ms vs 100-1000ms
+- Complexity: Single platform vs 10+ services  
+- Global: 300+ cities vs 25 regions
+- Pricing: Predictable vs complex tiered
+
+**vs Traditional Cloud:**
+- Setup time: 2 minutes vs 3-6 months
+- Management: Zero vs complex DevOps
+- Scale: Automatic vs manual planning
+
+### Demo Best Practices
+
+**Before Demo:**
+- [ ] Test deployment: `./run-demo.sh test`
+- [ ] Prepare backup domain
+- [ ] Have curl commands ready
+- [ ] Check internet connection
+
+**During Demo:**
+- [ ] Start with architecture overview
+- [ ] Show admin panel for visual impact
+- [ ] Use technical commands for developers
+- [ ] Emphasize global scale (300+ cities)
+- [ ] Have recovery plan ready
+
+**After Demo:**
+- [ ] Leave environment running for exploration
+- [ ] Share API endpoints and documentation
+- [ ] Schedule technical follow-up
+- [ ] Provide trial account access
+
+### Recovery Strategies
+
+**Complete Demo Failure:**
+- Switch to pre-deployed backup environment
+- Use architecture walkthrough mode
+- Schedule follow-up with working demo
+
+**Partial Issues:**
+- `./run-demo.sh reset` for data problems
+- Show Cloudflare Dashboard as backup
+- Explain issue and recovery (builds confidence)
+
+### Follow-up Materials
+
+**Send After Demo:**
+- Link to live demo environment
+- Architecture documentation
+- API reference and code samples
+- Pricing calculator
+
+**Next Steps:**
+- Technical deep-dive meeting
+- Architecture review session
+- Custom POC discussion
+- Trial account setup
 
 Ready to demo the future of edge computing! 🚀
