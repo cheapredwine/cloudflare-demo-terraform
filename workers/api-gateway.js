@@ -23,23 +23,15 @@ export default {
     try {
       // Route to different services
       if (path.startsWith('/api/products')) {
-        return handleProducts(request, env, corsHeaders);
+        return await handleProducts(request, env, corsHeaders);
       } else if (path.startsWith('/api/orders')) {
-        return handleOrders(request, env, corsHeaders);
+        return await handleOrders(request, env, corsHeaders);
       } else if (path.startsWith('/api/upload')) {
-        return handleUpload(request, env, corsHeaders);
+        return await handleUpload(request, env, corsHeaders);
       } else if (path.startsWith('/api/auth')) {
-        return handleAuth(request, env, corsHeaders);
+        return await handleAuth(request, env, corsHeaders);
       } else {
-        return new Response(JSON.stringify({ 
-          error: 'Not found',
-          available_endpoints: [
-            '/api/products',
-            '/api/orders', 
-            '/api/upload',
-            '/api/auth'
-          ]
-        }), {
+        return new Response(JSON.stringify({ error: 'Not found' }), {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -62,10 +54,16 @@ async function handleProducts(request, env, corsHeaders) {
   const rewrittenPath = url.pathname.replace(/^\/api/, '');
   const proxiedUrl = `https://products-api.internal${rewrittenPath}${url.search}`;
 
+  const hasBody = !['GET', 'HEAD'].includes(request.method);
+
+  // Strip host header — service bindings don't need it and it can cause errors
+  const forwardHeaders = new Headers(request.headers);
+  forwardHeaders.delete('host');
+
   const proxiedRequest = new Request(proxiedUrl, {
     method: request.method,
-    headers: request.headers,
-    body: request.body,
+    headers: forwardHeaders,
+    body: hasBody ? request.body : null,
   });
 
   const response = await env.PRODUCTS_API.fetch(proxiedRequest);
@@ -125,7 +123,16 @@ async function handleOrders(request, env, corsHeaders) {
 async function handleUpload(request, env, corsHeaders) {
   if (request.method === 'POST') {
     try {
-      const formData = await request.formData();
+      let formData;
+      try {
+        formData = await request.formData();
+      } catch {
+        return new Response(JSON.stringify({ error: 'No file provided' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       const file = formData.get('file');
       
       if (!file) {
@@ -139,7 +146,7 @@ async function handleUpload(request, env, corsHeaders) {
       const filename = `${crypto.randomUUID()}-${file.name}`;
       
       // Upload to R2
-      await env.UPLOADS.put(filename, file.stream(), {
+      await env.UPLOADS.put(filename, file, {
         httpMetadata: {
           contentType: file.type,
         },

@@ -61,7 +61,7 @@ async function getProducts(env, corsHeaders) {
       headers: { 
         ...corsHeaders, 
         'Content-Type': 'application/json',
-        'X-Cache': 'HIT'
+        'X-Products-Cache': 'HIT'
       }
     });
   }
@@ -87,7 +87,7 @@ async function getProducts(env, corsHeaders) {
     headers: { 
       ...corsHeaders, 
       'Content-Type': 'application/json',
-      'X-Cache': 'MISS'
+      'X-Products-Cache': 'MISS'
     }
   });
 }
