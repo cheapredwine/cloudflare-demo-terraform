@@ -243,7 +243,7 @@ function serveDashboard(env) {
             resultDiv.innerHTML = '<div class="loading">Loading sample data...</div>';
             
             try {
-                const response = await fetch(`https://api.${zoneName}/products/seed`, { method: 'POST' });
+                const response = await fetch(\`https://api.${zoneName}/products/seed\`, { method: 'POST' });
                 const result = await response.json();
                 
                 if (response.ok) {
