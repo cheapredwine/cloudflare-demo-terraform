@@ -7,6 +7,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 4.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -25,7 +29,6 @@ variable "cloudflare_api_token" {
 variable "account_id" {
   description = "Cloudflare account ID"
   type        = string
-  default     = "1ddebf6f9507d3fc9052158be9d42dee"
 }
 
 variable "zone_name" {
@@ -211,9 +214,9 @@ resource "cloudflare_page_rule" "api_cache" {
   status   = "active"
 
   actions = {
-    cache_level        = "cache_everything"
-    edge_cache_ttl     = 300
-    browser_cache_ttl  = 300
+    cache_level       = "cache_everything"
+    edge_cache_ttl    = 300
+    browser_cache_ttl = 300
   }
 }
 
@@ -243,6 +246,25 @@ resource "cloudflare_zone_settings_override" "main" {
     security_level          = "medium"
     browser_check           = "on"
     hotlink_protection      = "on"
+  }
+}
+
+# D1 Schema Migration
+# Runs wrangler to apply db/schema.sql on every deploy (idempotent via IF NOT EXISTS)
+resource "null_resource" "d1_schema" {
+  depends_on = [cloudflare_d1_database.products]
+
+  triggers = {
+    schema_hash = filemd5("${path.module}/db/schema.sql")
+    database_id = cloudflare_d1_database.products.id
+  }
+
+  provisioner "local-exec" {
+    command = "wrangler d1 execute demo-products --file=${path.module}/db/schema.sql --remote"
+    environment = {
+      CLOUDFLARE_API_TOKEN = var.cloudflare_api_token
+      CLOUDFLARE_ACCOUNT_ID = var.account_id
+    }
   }
 }
 
