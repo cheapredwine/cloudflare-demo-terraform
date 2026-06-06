@@ -57,48 +57,28 @@ export default {
 };
 
 async function handleProducts(request, env, corsHeaders) {
+  // Rewrite /api/products* -> /products* and proxy to products worker
   const url = new URL(request.url);
-  
-  if (request.method === 'GET') {
-    // Try cache first
-    const cacheKey = `products:${url.search}`;
-    const cached = await env.SESSIONS.get(cacheKey);
-    
-    if (cached) {
-      return new Response(cached, {
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json',
-          'X-Cache': 'HIT'
-        }
-      });
-    }
+  const rewrittenPath = url.pathname.replace(/^\/api/, '');
+  const proxiedUrl = `https://products-api.internal${rewrittenPath}${url.search}`;
 
-    // Query database
-    const stmt = env.DB.prepare('SELECT * FROM products ORDER BY name LIMIT 50');
-    const results = await stmt.all();
-    
-    const response = JSON.stringify({
-      products: results.results || [],
-      count: results.results?.length || 0,
-      cached_at: new Date().toISOString()
-    });
+  const proxiedRequest = new Request(proxiedUrl, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+  });
 
-    // Cache for 5 minutes
-    await env.SESSIONS.put(cacheKey, response, { expirationTtl: 300 });
+  const response = await env.PRODUCTS_API.fetch(proxiedRequest);
 
-    return new Response(response, {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'X-Cache': 'MISS'
-      }
-    });
+  // Pass through response with CORS headers added
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    newHeaders.set(key, value);
   }
 
-  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-    status: 405,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  return new Response(response.body, {
+    status: response.status,
+    headers: newHeaders,
   });
 }
 
