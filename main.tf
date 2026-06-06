@@ -37,52 +37,44 @@ variable "zone_name" {
   default     = "demo-platform.example"
 }
 
-# Main zone
-resource "cloudflare_zone" "main" {
+# Main zone - reference existing zone
+data "cloudflare_zone" "main" {
   account_id = var.account_id
-  zone       = var.zone_name
-  plan       = "enterprise"
+  name       = var.zone_name
 }
 
 # DNS Records
 resource "cloudflare_record" "root" {
-  zone_id = cloudflare_zone.main.id
+  zone_id = data.cloudflare_zone.main.id
   name    = var.zone_name
   content = "203.0.113.10"
   type    = "A"
   proxied = true
 }
 
-resource "cloudflare_record" "www" {
-  zone_id = cloudflare_zone.main.id
-  name    = "www"
-  content = var.zone_name
-  type    = "CNAME"
-  proxied = true
-}
 
 resource "cloudflare_record" "api" {
-  zone_id = cloudflare_zone.main.id
-  name    = "api"
-  content = "100::"
-  type    = "AAAA"
-  proxied = true
+  zone_id         = data.cloudflare_zone.main.id
+  name            = "api"
+  content         = "100::"
+  type            = "AAAA"
+  proxied         = true
 }
 
 resource "cloudflare_record" "admin" {
-  zone_id = cloudflare_zone.main.id
-  name    = "admin"
-  content = "100::"
-  type    = "AAAA"
-  proxied = true
+  zone_id         = data.cloudflare_zone.main.id
+  name            = "admin"
+  content         = "100::"
+  type            = "AAAA"
+  proxied         = true
 }
 
 resource "cloudflare_record" "uploads" {
-  zone_id = cloudflare_zone.main.id
-  name    = "uploads"
-  content = "public.r2.dev"
-  type    = "CNAME"
-  proxied = true
+  zone_id         = data.cloudflare_zone.main.id
+  name            = "uploads"
+  content         = "public.r2.dev"
+  type            = "CNAME"
+  proxied         = true
 }
 
 # R2 Bucket for file uploads
@@ -204,47 +196,67 @@ resource "cloudflare_worker_script" "admin_panel" {
 
 # Routes
 resource "cloudflare_worker_route" "api_gateway_route" {
-  zone_id     = cloudflare_zone.main.id
+  zone_id     = data.cloudflare_zone.main.id
   pattern     = "api.${var.zone_name}/*"
   script_name = cloudflare_worker_script.api_gateway.name
 }
 
 resource "cloudflare_worker_route" "admin_route" {
-  zone_id     = cloudflare_zone.main.id
+  zone_id     = data.cloudflare_zone.main.id
   pattern     = "admin.${var.zone_name}/*"
   script_name = cloudflare_worker_script.admin_panel.name
 }
 
-# Page Rules for performance
-resource "cloudflare_page_rule" "api_cache" {
-  zone_id  = cloudflare_zone.main.id
-  target   = "api.${var.zone_name}/products*"
-  priority = 1
-  status   = "active"
+# Cache Rules (replaces deprecated Page Rules)
+resource "cloudflare_ruleset" "cache_rules" {
+  zone_id     = data.cloudflare_zone.main.id
+  name        = "Cache Rules"
+  description = "Cache rules for API products and uploads"
+  kind        = "zone"
+  phase       = "http_request_cache_settings"
 
-  actions {
-    cache_level       = "cache_everything"
-    edge_cache_ttl    = 300
-    browser_cache_ttl = 300
+  rules {
+    description = "Cache API products for 5 minutes"
+    expression  = "(http.host eq \"api.${var.zone_name}\" and starts_with(http.request.uri.path, \"/products\"))"
+    action      = "set_cache_settings"
+    enabled     = true
+
+    action_parameters {
+      cache = true
+      edge_ttl {
+        mode    = "override_origin"
+        default = 300
+      }
+      browser_ttl {
+        mode    = "override_origin"
+        default = 300
+      }
+    }
   }
-}
 
-resource "cloudflare_page_rule" "uploads_cache" {
-  zone_id  = cloudflare_zone.main.id
-  target   = "uploads.${var.zone_name}/*"
-  priority = 2
-  status   = "active"
+  rules {
+    description = "Cache uploads for 24 hours"
+    expression  = "(http.host eq \"uploads.${var.zone_name}\")"
+    action      = "set_cache_settings"
+    enabled     = true
 
-  actions {
-    cache_level       = "cache_everything"
-    edge_cache_ttl    = 86400
-    browser_cache_ttl = 86400
+    action_parameters {
+      cache = true
+      edge_ttl {
+        mode    = "override_origin"
+        default = 86400
+      }
+      browser_ttl {
+        mode    = "override_origin"
+        default = 86400
+      }
+    }
   }
 }
 
 # SSL Settings
 resource "cloudflare_zone_settings_override" "main" {
-  zone_id = cloudflare_zone.main.id
+  zone_id = data.cloudflare_zone.main.id
 
   settings {
     always_use_https         = "on"
@@ -279,11 +291,11 @@ resource "null_resource" "d1_schema" {
 
 # Outputs
 output "zone_id" {
-  value = cloudflare_zone.main.id
+  value = data.cloudflare_zone.main.id
 }
 
 output "nameservers" {
-  value = cloudflare_zone.main.name_servers
+  value = data.cloudflare_zone.main.name_servers
 }
 
 output "api_gateway_url" {
