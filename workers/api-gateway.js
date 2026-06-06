@@ -172,7 +172,7 @@ async function handleUpload(request, env, corsHeaders) {
         filename: filename,
         size: file.size,
         type: file.type,
-        url: `https://uploads.demo-platform.example/${filename}`
+        url: `https://uploads.${env.ZONE_NAME}/${filename}`
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });

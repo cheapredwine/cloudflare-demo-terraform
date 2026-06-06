@@ -21,7 +21,7 @@ export default {
 
     try {
       if (path === '/' || path === '') {
-        return serveDashboard();
+        return serveDashboard(env);
       } else if (path === '/api/stats') {
         return getStats(env);
       } else if (path === '/api/orders') {
@@ -51,7 +51,8 @@ function isValidAuth(authHeader) {
   return authHeader === expectedAuth;
 }
 
-function serveDashboard() {
+function serveDashboard(env) {
+  const zoneName = env.ZONE_NAME || 'demo-platform.example';
   const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -242,7 +243,7 @@ function serveDashboard() {
             resultDiv.innerHTML = '<div class="loading">Loading sample data...</div>';
             
             try {
-                const response = await fetch('https://api.demo-platform.example/products/seed', { method: 'POST' });
+                const response = await fetch(`https://api.${zoneName}/products/seed`, { method: 'POST' });
                 const result = await response.json();
                 
                 if (response.ok) {

@@ -140,6 +140,11 @@ resource "cloudflare_worker_script" "api_gateway" {
     name       = "ORDER_QUEUE"
     queue_name = cloudflare_queue.orders.queue_name
   }
+
+  plain_text_binding {
+    name = "ZONE_NAME"
+    text = var.zone_name
+  }
 }
 
 # Products API Worker
@@ -190,6 +195,11 @@ resource "cloudflare_worker_script" "admin_panel" {
   kv_namespace_binding {
     name         = "SESSIONS"
     namespace_id = cloudflare_workers_kv_namespace.sessions.id
+  }
+
+  plain_text_binding {
+    name = "ZONE_NAME"
+    text = var.zone_name
   }
 }
 
