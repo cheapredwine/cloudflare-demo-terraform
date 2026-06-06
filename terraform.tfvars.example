@@ -1,0 +1,6 @@
+# Cloudflare Demo Platform Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+cloudflare_api_token = "your-cloudflare-api-token-here"
+account_id          = "1ddebf6f9507d3fc9052158be9d42dee"  # JSherron Test Account
+zone_name           = "demo-platform.example"

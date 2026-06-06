@@ -1,0 +1,280 @@
+# Cloudflare Modern API Platform Demo
+# Based on JSherron account setup with API gateway pattern
+
+terraform {
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
+  }
+}
+
+# Configure the Cloudflare Provider
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
+}
+
+# Variables
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token"
+  type        = string
+  sensitive   = true
+}
+
+variable "account_id" {
+  description = "Cloudflare account ID"
+  type        = string
+  default     = "1ddebf6f9507d3fc9052158be9d42dee"
+}
+
+variable "zone_name" {
+  description = "Primary zone for the demo"
+  type        = string
+  default     = "demo-platform.example"
+}
+
+# Main zone
+resource "cloudflare_zone" "main" {
+  account = var.account_id
+  name    = var.zone_name
+  plan    = "enterprise"
+}
+
+# DNS Records
+resource "cloudflare_record" "root" {
+  zone_id = cloudflare_zone.main.id
+  name    = var.zone_name
+  value   = "203.0.113.10"
+  type    = "A"
+  proxied = true
+}
+
+resource "cloudflare_record" "www" {
+  zone_id = cloudflare_zone.main.id
+  name    = "www"
+  value   = var.zone_name
+  type    = "CNAME"
+  proxied = true
+}
+
+resource "cloudflare_record" "api" {
+  zone_id = cloudflare_zone.main.id
+  name    = "api"
+  value   = "100::"
+  type    = "AAAA"
+  proxied = true
+}
+
+resource "cloudflare_record" "admin" {
+  zone_id = cloudflare_zone.main.id
+  name    = "admin"
+  value   = "100::"
+  type    = "AAAA"
+  proxied = true
+}
+
+resource "cloudflare_record" "uploads" {
+  zone_id = cloudflare_zone.main.id
+  name    = "uploads"
+  value   = "public.r2.dev"
+  type    = "CNAME"
+  proxied = true
+}
+
+# R2 Bucket for file uploads
+resource "cloudflare_r2_bucket" "uploads" {
+  account_id = var.account_id
+  name       = "demo-platform-uploads"
+}
+
+# KV Namespace for sessions
+resource "cloudflare_workers_kv_namespace" "sessions" {
+  account_id = var.account_id
+  title      = "demo-sessions"
+}
+
+# KV Namespace for cache
+resource "cloudflare_workers_kv_namespace" "cache" {
+  account_id = var.account_id
+  title      = "demo-cache"
+}
+
+# D1 Database
+resource "cloudflare_d1_database" "products" {
+  account_id = var.account_id
+  name       = "demo-products"
+}
+
+# Queue for async processing
+resource "cloudflare_queue" "orders" {
+  account_id = var.account_id
+  queue_name = "demo-order-processing"
+}
+
+# API Gateway Worker
+resource "cloudflare_worker_script" "api_gateway" {
+  account_id = var.account_id
+  name       = "demo-api-gateway"
+  content    = file("${path.module}/workers/api-gateway.js")
+
+  kv_namespace_binding {
+    name         = "SESSIONS"
+    namespace_id = cloudflare_workers_kv_namespace.sessions.id
+  }
+
+  r2_bucket_binding {
+    name        = "UPLOADS"
+    bucket_name = cloudflare_r2_bucket.uploads.name
+  }
+
+  d1_database_binding {
+    name        = "DB"
+    database_id = cloudflare_d1_database.products.id
+  }
+
+  queue_binding {
+    name       = "ORDER_QUEUE"
+    queue_name = cloudflare_queue.orders.queue_name
+  }
+}
+
+# Products API Worker
+resource "cloudflare_worker_script" "products_api" {
+  account_id = var.account_id
+  name       = "demo-products-api"
+  content    = file("${path.module}/workers/products-api.js")
+
+  d1_database_binding {
+    name        = "DB"
+    database_id = cloudflare_d1_database.products.id
+  }
+
+  kv_namespace_binding {
+    name         = "CACHE"
+    namespace_id = cloudflare_workers_kv_namespace.cache.id
+  }
+}
+
+# Order Processing Worker
+resource "cloudflare_worker_script" "order_processor" {
+  account_id = var.account_id
+  name       = "demo-order-processor"
+  content    = file("${path.module}/workers/order-processor.js")
+
+  d1_database_binding {
+    name        = "DB"
+    database_id = cloudflare_d1_database.products.id
+  }
+
+  queue_binding {
+    name       = "ORDER_QUEUE"
+    queue_name = cloudflare_queue.orders.queue_name
+  }
+}
+
+# Admin Panel Worker
+resource "cloudflare_worker_script" "admin_panel" {
+  account_id = var.account_id
+  name       = "demo-admin-panel"
+  content    = file("${path.module}/workers/admin-panel.js")
+
+  d1_database_binding {
+    name        = "DB"
+    database_id = cloudflare_d1_database.products.id
+  }
+
+  kv_namespace_binding {
+    name         = "SESSIONS"
+    namespace_id = cloudflare_workers_kv_namespace.sessions.id
+  }
+}
+
+# Routes
+resource "cloudflare_worker_route" "api_gateway_route" {
+  zone_id     = cloudflare_zone.main.id
+  pattern     = "api.${var.zone_name}/*"
+  script_name = cloudflare_worker_script.api_gateway.name
+}
+
+resource "cloudflare_worker_route" "admin_route" {
+  zone_id     = cloudflare_zone.main.id
+  pattern     = "admin.${var.zone_name}/*"
+  script_name = cloudflare_worker_script.admin_panel.name
+}
+
+# Page Rules for performance
+resource "cloudflare_page_rule" "api_cache" {
+  zone_id  = cloudflare_zone.main.id
+  target   = "api.${var.zone_name}/products*"
+  priority = 1
+  status   = "active"
+
+  actions = {
+    cache_level        = "cache_everything"
+    edge_cache_ttl     = 300
+    browser_cache_ttl  = 300
+  }
+}
+
+resource "cloudflare_page_rule" "uploads_cache" {
+  zone_id  = cloudflare_zone.main.id
+  target   = "uploads.${var.zone_name}/*"
+  priority = 2
+  status   = "active"
+
+  actions = {
+    cache_level       = "cache_everything"
+    edge_cache_ttl    = 86400
+    browser_cache_ttl = 86400
+  }
+}
+
+# SSL Settings
+resource "cloudflare_zone_settings_override" "main" {
+  zone_id = cloudflare_zone.main.id
+
+  settings {
+    always_use_https         = "on"
+    automatic_https_rewrites = "on"
+    ssl                      = "strict"
+    min_tls_version         = "1.2"
+    tls_1_3                 = "zrt"
+    security_level          = "medium"
+    browser_check           = "on"
+    hotlink_protection      = "on"
+  }
+}
+
+# Outputs
+output "zone_id" {
+  value = cloudflare_zone.main.id
+}
+
+output "nameservers" {
+  value = cloudflare_zone.main.name_servers
+}
+
+output "api_gateway_url" {
+  value = "https://api.${var.zone_name}"
+}
+
+output "admin_panel_url" {
+  value = "https://admin.${var.zone_name}"
+}
+
+output "uploads_url" {
+  value = "https://uploads.${var.zone_name}"
+}
+
+output "d1_database_id" {
+  value = cloudflare_d1_database.products.id
+}
+
+output "kv_namespace_sessions" {
+  value = cloudflare_workers_kv_namespace.sessions.id
+}
+
+output "r2_bucket_name" {
+  value = cloudflare_r2_bucket.uploads.name
+}
