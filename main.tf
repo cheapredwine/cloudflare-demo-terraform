@@ -39,16 +39,16 @@ variable "zone_name" {
 
 # Main zone
 resource "cloudflare_zone" "main" {
-  account = var.account_id
-  name    = var.zone_name
-  plan    = "enterprise"
+  account_id = var.account_id
+  zone       = var.zone_name
+  plan       = "enterprise"
 }
 
 # DNS Records
 resource "cloudflare_record" "root" {
   zone_id = cloudflare_zone.main.id
   name    = var.zone_name
-  value   = "203.0.113.10"
+  content = "203.0.113.10"
   type    = "A"
   proxied = true
 }
@@ -56,7 +56,7 @@ resource "cloudflare_record" "root" {
 resource "cloudflare_record" "www" {
   zone_id = cloudflare_zone.main.id
   name    = "www"
-  value   = var.zone_name
+  content = var.zone_name
   type    = "CNAME"
   proxied = true
 }
@@ -64,7 +64,7 @@ resource "cloudflare_record" "www" {
 resource "cloudflare_record" "api" {
   zone_id = cloudflare_zone.main.id
   name    = "api"
-  value   = "100::"
+  content = "100::"
   type    = "AAAA"
   proxied = true
 }
@@ -72,7 +72,7 @@ resource "cloudflare_record" "api" {
 resource "cloudflare_record" "admin" {
   zone_id = cloudflare_zone.main.id
   name    = "admin"
-  value   = "100::"
+  content = "100::"
   type    = "AAAA"
   proxied = true
 }
@@ -80,7 +80,7 @@ resource "cloudflare_record" "admin" {
 resource "cloudflare_record" "uploads" {
   zone_id = cloudflare_zone.main.id
   name    = "uploads"
-  value   = "public.r2.dev"
+  content = "public.r2.dev"
   type    = "CNAME"
   proxied = true
 }
@@ -112,7 +112,7 @@ resource "cloudflare_d1_database" "products" {
 # Queue for async processing
 resource "cloudflare_queue" "orders" {
   account_id = var.account_id
-  queue_name = "demo-order-processing"
+  name       = "demo-order-processing"
 }
 
 # API Gateway Worker
@@ -137,13 +137,8 @@ resource "cloudflare_worker_script" "api_gateway" {
   }
 
   queue_binding {
-    name       = "ORDER_QUEUE"
-    queue_name = cloudflare_queue.orders.queue_name
-  }
-
-  plain_text_binding {
-    name = "ZONE_NAME"
-    text = var.zone_name
+    binding = "ORDER_QUEUE"
+    queue   = cloudflare_queue.orders.name
   }
 }
 
@@ -176,8 +171,8 @@ resource "cloudflare_worker_script" "order_processor" {
   }
 
   queue_binding {
-    name       = "ORDER_QUEUE"
-    queue_name = cloudflare_queue.orders.queue_name
+    binding = "ORDER_QUEUE"
+    queue   = cloudflare_queue.orders.name
   }
 }
 
@@ -223,7 +218,7 @@ resource "cloudflare_page_rule" "api_cache" {
   priority = 1
   status   = "active"
 
-  actions = {
+  actions {
     cache_level       = "cache_everything"
     edge_cache_ttl    = 300
     browser_cache_ttl = 300
@@ -236,7 +231,7 @@ resource "cloudflare_page_rule" "uploads_cache" {
   priority = 2
   status   = "active"
 
-  actions = {
+  actions {
     cache_level       = "cache_everything"
     edge_cache_ttl    = 86400
     browser_cache_ttl = 86400
