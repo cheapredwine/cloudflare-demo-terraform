@@ -4,7 +4,7 @@
 *.tfvars
 !*.tfvars.example
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl is intentionally tracked for reproducible provider versions
 crash.log
 crash.*.log
 
