@@ -129,7 +129,7 @@ reset_data() {
     # Seed fresh data
     echo "Loading sample data..."
     response=$(curl -s -w "%{http_code}" \
-        -X POST "https://api.$ZONE_NAME/products/seed" -o /tmp/seed_response.json)
+        -X POST "https://api.$ZONE_NAME/api/products/seed" -o /tmp/seed_response.json)
     
     if [ "$response" -eq 200 ]; then
         echo "✅ Sample data loaded"
@@ -173,7 +173,8 @@ fresh_deploy() {
 }
 
 test_endpoints_silent() {
-    API_URL="https://api.$ZONE_NAME"
+    # Use /api/products — bare URL returns 404, which is correct worker behaviour
+    API_URL="https://api.$ZONE_NAME/api/products"
     response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_URL" 2>/dev/null)
     [ "$response" -eq 200 ]
 }
@@ -183,7 +184,7 @@ test_endpoints() {
 
     # Test API Gateway
     echo "Testing API Gateway..."
-    API_URL="https://api.$ZONE_NAME"
+    API_URL="https://api.$ZONE_NAME/api/products"
     response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_URL" 2>/dev/null)
     if [ "$response" -eq 200 ]; then
         echo "✅ API Gateway: $API_URL"
@@ -209,10 +210,8 @@ show_success_message() {
     echo "======================="
     echo ""
     echo "📱 Web Interface:"
-    echo "   Main Site:    https://$ZONE_NAME"
     echo "   API Gateway:  https://api.$ZONE_NAME"
     echo "   Admin Panel:  https://admin.$ZONE_NAME"
-    echo "   File Uploads: https://uploads.$ZONE_NAME"
     echo ""
     echo "🔑 Admin Access:"
     echo "   URL:      https://admin.$ZONE_NAME"
@@ -229,15 +228,15 @@ show_quick_start() {
     echo "   3. Test the API endpoints:"
     echo ""
     echo "   # Get products"
-    echo "   curl https://api.$ZONE_NAME/products"
+    echo "   curl https://api.$ZONE_NAME/api/products"
     echo ""
     echo "   # Create order"
-    echo "   curl -X POST https://api.$ZONE_NAME/orders \\"
+    echo "   curl -X POST https://api.$ZONE_NAME/api/orders \\"
     echo "     -H 'Content-Type: application/json' \\"
     echo "     -d '{\"customer_id\":\"demo\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}'"
     echo ""
     echo "   # Upload file"
-    echo "   curl -X POST https://api.$ZONE_NAME/upload -F 'file=@image.jpg'"
+    echo "   curl -X POST https://api.$ZONE_NAME/api/upload -F 'file=@image.jpg'"
     echo ""
     echo "🧹 Management:"
     echo "   ./run-demo.sh reset     # Reset data"
@@ -253,7 +252,7 @@ run_demo_commands() {
     sleep 10
     
     echo "Creating sample product..."
-    response=$(curl -s -X POST "https://api.$ZONE_NAME/products" \
+    response=$(curl -s -X POST "https://api.$ZONE_NAME/api/products" \
         -H "Content-Type: application/json" \
         -d '{"name":"Demo Product","description":"Created by script","price":99.99,"category":"demo","stock":10}')
     
@@ -265,7 +264,7 @@ run_demo_commands() {
     
     echo ""
     echo "Getting all products..."
-    response=$(curl -s "https://api.$ZONE_NAME/products")
+    response=$(curl -s "https://api.$ZONE_NAME/api/products")
     
     if command -v jq &> /dev/null; then
         echo "$response" | jq .
@@ -275,7 +274,7 @@ run_demo_commands() {
     
     echo ""
     echo "Creating sample order..."
-    response=$(curl -s -X POST "https://api.$ZONE_NAME/orders" \
+    response=$(curl -s -X POST "https://api.$ZONE_NAME/api/orders" \
         -H "Content-Type: application/json" \
         -d '{"customer_id":"script-demo","items":[{"product_id":1,"quantity":1,"unit_price":99.99}],"total":99.99}')
     
