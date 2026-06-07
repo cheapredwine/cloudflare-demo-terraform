@@ -142,8 +142,9 @@ async function handleUpload(request, env, corsHeaders) {
         });
       }
 
-      // Generate unique filename
-      const filename = `${crypto.randomUUID()}-${file.name}`;
+      // Generate unique filename — file.name may be undefined depending on client
+      const originalName = (file.name && file.name !== 'undefined') ? file.name : 'upload';
+      const filename = `${crypto.randomUUID()}-${originalName}`;
       
       // Upload to R2
       await env.UPLOADS.put(filename, file, {

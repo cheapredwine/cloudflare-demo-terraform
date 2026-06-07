@@ -77,6 +77,49 @@ resource "cloudflare_r2_bucket" "uploads" {
   name       = "demo-platform-uploads"
 }
 
+# Empty R2 bucket before destroy (Cloudflare won't delete non-empty buckets)
+resource "null_resource" "empty_r2_on_destroy" {
+  depends_on = [cloudflare_r2_bucket.uploads]
+
+  triggers = {
+    account_id  = var.account_id
+    bucket_name = cloudflare_r2_bucket.uploads.name
+    api_token   = var.cloudflare_api_token
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      python3 -c "
+import urllib.request, urllib.error, json, sys
+
+account_id  = '${self.triggers.account_id}'
+bucket_name = '${self.triggers.bucket_name}'
+token       = '${self.triggers.api_token}'
+base        = f'https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket_name}'
+headers     = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+def api(method, path='', body=None):
+    req = urllib.request.Request(base + path, method=method,
+          data=json.dumps(body).encode() if body else None, headers=headers)
+    try:
+        return json.loads(urllib.request.urlopen(req).read())
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read())
+
+resp = api('GET', '/objects')
+objects = resp.get('result', []) if isinstance(resp.get('result'), list) else []
+print(f'Emptying R2 bucket: {bucket_name} ({len(objects)} objects)')
+for obj in objects:
+    key = obj['key']
+    r = api('DELETE', f'/objects/{urllib.request.quote(key, safe=\"\")}')
+    print(f'  deleted: {key}')
+print('Done.')
+"
+    EOT
+  }
+}
+
 # KV Namespace for sessions
 resource "cloudflare_workers_kv_namespace" "sessions" {
   account_id = var.account_id
