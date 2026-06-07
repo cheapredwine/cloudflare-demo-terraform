@@ -1,34 +1,64 @@
 # API Documentation
 
-Complete API reference for the demo platform.
+Complete API reference for the Cloudflare Demo Platform.
 
 ## Base URL
+
 ```
-https://api.your-domain.com
+https://api.jsherron.com
 ```
+
+All routes are prefixed with `/api/`.
 
 ## Authentication
 
-Most endpoints are open for demo purposes. Admin endpoints require basic auth.
+Two independent auth systems exist:
 
-### Session-based Auth (Demo)
-```bash
-# Login
-POST /auth/login
+| System | Where | How |
+|--------|-------|-----|
+| Session auth | `api.jsherron.com` | Login to get a UUID session token, pass as Bearer |
+| Admin basic auth | `admin.jsherron.com` | HTTP Basic — `admin` / `demo123` |
+
+### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
+
 {
-  "email": "user@example.com", 
+  "email": "user@example.com",
   "password": "any-password"
 }
+```
 
-# Use session token
+**Response:**
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com"
+  },
+  "expires_at": "2024-06-06T20:51:57Z"
+}
+```
+
+Session tokens are UUID strings stored as JSON in KV with a 24-hour TTL. They are not JWTs.
+
+### Get Current User
+```http
+GET /api/auth/me
 Authorization: Bearer <session-id>
 ```
 
+---
+
 ## Products API
+
+Products are stored in D1. List responses are cached in KV for 10 minutes (`X-Products-Cache: HIT/MISS`). Individual product lookups query D1 directly (no cache).
 
 ### List Products
 ```http
-GET /products
+GET /api/products
 ```
 
 **Response:**
@@ -51,28 +81,35 @@ GET /products
 }
 ```
 
-### Get Product
-```http
-GET /products/{id}
+Cache header on response:
+```
+X-Products-Cache: HIT
 ```
 
-### Create Product  
+### Get Product
 ```http
-POST /products
+GET /api/products/{id}
+```
+
+### Create Product
+```http
+POST /api/products
 Content-Type: application/json
 
 {
   "name": "Product Name",
-  "description": "Product description", 
+  "description": "Product description",
   "price": 29.99,
   "category": "electronics",
   "stock": 100
 }
 ```
 
+Returns `201 Created` with the new product object including its `id`.
+
 ### Update Product
 ```http
-PUT /products/{id}
+PUT /api/products/{id}
 Content-Type: application/json
 
 {
@@ -81,21 +118,37 @@ Content-Type: application/json
 }
 ```
 
+All fields are optional — only provided fields are updated.
+
 ### Delete Product
 ```http
-DELETE /products/{id}
+DELETE /api/products/{id}
 ```
 
 ### Seed Sample Data
+Inserts 5 sample products (Coffee Beans, Wireless Headphones, Cotton T-Shirt, Water Bottle, Chocolate Box). Clears KV cache after insert.
+
 ```http
-POST /products/seed
+POST /api/products/seed
 ```
+
+**Response:**
+```json
+{
+  "message": "Seeded 5 products",
+  "timestamp": "2024-06-05T20:51:57Z"
+}
+```
+
+---
 
 ## Orders API
 
+Orders are sent to a Cloudflare Queue for async processing. The queue consumer worker (`demo-order-processor`) writes them to D1 and decrements stock.
+
 ### Create Order
 ```http
-POST /orders
+POST /api/orders
 Content-Type: application/json
 
 {
@@ -120,14 +173,23 @@ Content-Type: application/json
 }
 ```
 
+The order is processed asynchronously. Check the admin panel to see completed orders.
+
+---
+
 ## File Upload API
+
+Files are stored in R2 bucket `demo-platform-uploads`. The returned URL is a storage reference — there is no public CDN serving uploads in this demo.
 
 ### Upload File
 ```http
-POST /upload
+POST /api/upload
 Content-Type: multipart/form-data
+```
 
-curl -F "file=@image.jpg" https://api.your-domain.com/upload
+```bash
+curl -X POST https://api.jsherron.com/api/upload \
+  -F "file=@image.jpg"
 ```
 
 **Response:**
@@ -136,84 +198,44 @@ curl -F "file=@image.jpg" https://api.your-domain.com/upload
   "filename": "550e8400-e29b-41d4-a716-446655440000-image.jpg",
   "size": 245760,
   "type": "image/jpeg",
-  "url": "https://uploads.your-domain.com/550e8400-e29b-41d4-a716-446655440000-image.jpg"
+  "url": "https://uploads.jsherron.com/550e8400-e29b-41d4-a716-446655440000-image.jpg"
 }
 ```
 
-## Authentication API
-
-### Login
-```http
-POST /auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "any-password"
-}
-```
-
-**Response:**
-```json
-{
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "user": {
-    "id": "user-550e8400-e29b-41d4-a716-446655440000",
-    "email": "user@example.com"
-  },
-  "expires_at": "2024-06-06T20:51:57Z"
-}
-```
-
-### Get Current User
-```http
-GET /auth/me
-Authorization: Bearer <session-id>
-```
+---
 
 ## Error Responses
 
-All endpoints return consistent error formats:
+All errors return JSON with an `error` field:
 
 ```json
 {
-  "error": "Error description",
-  "message": "Detailed error message",
-  "timestamp": "2024-06-05T20:51:57Z"
+  "error": "Not found"
 }
 ```
 
+Internal server errors also include a `message` field with the exception text.
+
 **HTTP Status Codes:**
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request
-- `401` - Unauthorized  
-- `404` - Not Found
-- `405` - Method Not Allowed
-- `429` - Rate Limited
-- `500` - Internal Server Error
+- `200` — Success
+- `201` — Created
+- `400` — Bad Request (missing required fields, invalid content type)
+- `401` — Unauthorized (invalid or missing session token)
+- `404` — Not Found
+- `405` — Method Not Allowed
+- `500` — Internal Server Error
 
-## Rate Limits
+There is no rate limiting implemented in this demo.
 
-- **API Endpoints**: 100 requests/minute per IP
-- **File Uploads**: 10 uploads/minute per IP
-- **Admin Endpoints**: 20 requests/minute per IP
-
-Rate limit headers included in responses:
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1717624317
-```
+---
 
 ## Caching
 
-- **Product Lists**: Cached for 10 minutes
-- **Individual Products**: Cached for 5 minutes  
-- **Static Assets**: Cached for 24 hours
+| Scope | Store | TTL |
+|-------|-------|-----|
+| Product list (`GET /api/products`) | KV (`demo-cache`) | 10 minutes |
+| Edge cache for `/api/products*` | Cloudflare Cache Rules | 5 minutes |
 
-Cache headers:
-```
-X-Cache: HIT|MISS
-Cache-Control: public, max-age=600
-```
+Cache is invalidated automatically on any product create, update, or delete.
+
+Cache status is returned via the `X-Products-Cache` header (`HIT` or `MISS`).
