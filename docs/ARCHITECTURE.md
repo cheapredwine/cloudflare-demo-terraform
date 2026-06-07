@@ -1,103 +1,182 @@
 # Architecture Overview
 
-## System Architecture
+## System Diagram
+
+See `docs/architecture.png` for the full visual diagram.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Cloudflare Global Network               │
-│                         300+ Edge Locations                    │
-└─────────────────────────────────────────────────────────────────┘
-                                    │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Frontend App   │    │   Admin Panel   │    │   File Uploads  │
-│ demo-platform.  │    │ admin.demo-     │    │ uploads.demo-   │
-│   example       │    │ platform.example│    │ platform.example│
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌─────────────────┐
-                    │   API Gateway   │
-                    │    Worker       │
-                    │ api.demo-       │
-                    │ platform.example│
-                    └─────────────────┘
-                             │
-                    ┌────────┼────────┐
-                    │        │        │
-          ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-          │ Products    │  │ Order       │  │ Admin       │
-          │ API Worker  │  │ Processor   │  │ Worker      │
-          │             │  │ Worker      │  │             │
-          └─────────────┘  └─────────────┘  └─────────────┘
-                    │        │        │
-          ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-          │     D1      │  │   Queues    │  │     KV      │
-          │  Database   │  │ (Async Ops) │  │ (Sessions)  │
-          │             │  │             │  │ (Cache)     │
-          └─────────────┘  └─────────────┘  └─────────────┘
-                                 │
-                        ┌─────────────┐
-                        │     R2      │
-                        │  Storage    │
-                        │ (Files)     │
-                        └─────────────┘
+                        Client
+                     (curl / browser)
+                           │
+                        HTTPS
+                           │
+               ┌───────────────────────┐
+               │   Cloudflare Edge     │
+               │                       │
+               │  DNS                  │
+               │  api.jsherron.com     │
+               │  admin.jsherron.com   │
+               │                       │
+               │  Cache Rules          │
+               │  /api/products* 5min  │
+               │                       │
+               │  Worker Routes        │
+               │  api.*  → gateway     │
+               │  admin.* → admin      │
+               └───────────────────────┘
+                     │           │
+          ┌──────────┘           └──────────┐
+          ▼                                 ▼
+  ┌───────────────┐                ┌───────────────┐
+  │  API Gateway  │                │  Admin Panel  │
+  │ demo-api-     │                │ demo-admin-   │
+  │ gateway       │                │ panel         │
+  │               │                │               │
+  │ Auth · Routing│                │ Basic Auth    │
+  │ Upload · Orders│               │ Stats · Setup │
+  └───────────────┘                └───────────────┘
+          │                                │
+          │ service binding                │
+          ▼                                │
+  ┌───────────────┐                        │
+  │  Products API │ (no public route)      │
+  │ demo-products │                        │
+  │ -api          │                        │
+  │               │                        │
+  │ CRUD · Seed   │                        │
+  │ KV Cache      │                        │
+  └───────────────┘                        │
+          │                                │
+          │   send() ──────────────────────┼──┐
+          │                                │  ▼
+          │                         ┌───────────────┐
+          │                         │ Order Processor│
+          │                         │ demo-order-   │
+          │                         │ processor     │
+          │                         │               │
+          │                         │ Queue Consumer│
+          │                         │ D1 Write      │
+          │                         └───────────────┘
+          │                                │
+          └────────────┬───────────────────┘
+                       │
+          ┌────────────┼────────────────────┐
+          ▼            ▼           ▼        ▼
+    ┌──────────┐ ┌──────────┐ ┌──────┐ ┌────────┐
+    │    D1    │ │    KV    │ │  R2  │ │ Queue  │
+    │ demo-    │ │ sessions │ │upload│ │ demo-  │
+    │ products │ │ cache    │ │      │ │ order- │
+    │          │ │ 10m TTL  │ │      │ │ proc.  │
+    └──────────┘ └──────────┘ └──────┘ └────────┘
 ```
+
+---
 
 ## Components
 
-### Edge Workers
-- **API Gateway**: Request routing, authentication, CORS handling
-- **Products API**: CRUD operations with intelligent caching
-- **Order Processor**: Async order handling via queues
-- **Admin Panel**: Management interface with real-time stats
+### Workers (Compute)
 
-### Storage Layer
-- **D1 Database**: Relational data (products, orders, customers)
-- **KV Storage**: Session management and application cache
-- **R2 Buckets**: File uploads and static assets
-- **Queues**: Async processing and event handling
+| Worker | Route | Purpose |
+|--------|-------|---------|
+| `demo-api-gateway` | `api.jsherron.com/*` | Entry point — CORS, auth, routing, upload, orders |
+| `demo-admin-panel` | `admin.jsherron.com/*` | Admin UI — stats, product/order browser, DB setup |
+| `demo-products-api` | none (service binding only) | Products CRUD — proxied from gateway via service binding |
+| `demo-order-processor` | none (queue consumer) | Async — consumes queue, writes orders to D1, decrements stock |
 
-### Network Layer
-- **DNS Management**: Automated subdomain routing
-- **SSL/TLS**: Automatic certificates with strict security
-- **Page Rules**: Intelligent caching policies
-- **Security**: WAF rules, rate limiting, bot management
+### Storage
 
-## Data Flow
+| Resource | Terraform Name | Purpose |
+|----------|----------------|---------|
+| D1 Database | `demo-products` | Products, orders, order_items tables |
+| KV Namespace | `demo-sessions` | Session tokens (24h TTL) |
+| KV Namespace | `demo-cache` | Product list cache (10min TTL) |
+| R2 Bucket | `demo-platform-uploads` | Uploaded files |
+| Queue | `demo-order-processing` | Async order delivery to processor |
 
-### Product Catalog Request
+### Network
+
+| Resource | Details |
+|----------|---------|
+| Zone | `jsherron.com` — referenced as data source (pre-existing) |
+| DNS A | `jsherron.com → 203.0.113.10` (proxied) |
+| DNS AAAA | `api.jsherron.com → 100::` (proxied, Anycast) |
+| DNS AAAA | `admin.jsherron.com → 100::` (proxied, Anycast) |
+| Cache Rules | `/api/products*` 5min edge TTL; previously Page Rules |
+| SSL | Strict mode, TLS 1.2+, Always HTTPS, Hotlink Protection |
+
+---
+
+## Data Flows
+
+### Product List Request (cache miss → hit)
 ```
-User → Edge Location → API Gateway → Products Worker → D1 Query → Cache Store → Response
+Client → api.jsherron.com → Cache Rules check
+  → API Gateway Worker → service binding → Products API Worker
+  → KV get("products:all") → MISS
+  → D1 SELECT → results
+  → KV put("products:all", results, 600s)
+  → Response (X-Products-Cache: MISS)
+
+Second request:
+  → Products API Worker → KV get("products:all") → HIT
+  → Response (X-Products-Cache: HIT)
 ```
 
-### Order Processing
+### Order Submission (async)
 ```
-Order Submit → API Gateway → Queue → Order Processor → Stock Update → Customer Notification
+Client → POST /api/orders → API Gateway
+  → validate fields
+  → generate UUID order_id
+  → Queue.send({ order_id, customer_id, items, total })
+  → return { order_id, status: "queued" }
+
+  [async] Queue → Order Processor Worker
+    → D1 INSERT orders
+    → D1 INSERT order_items
+    → D1 UPDATE products SET stock = stock - quantity
+    → D1 UPDATE orders SET status = "completed"
 ```
 
 ### File Upload
 ```
-File Upload → API Gateway → R2 Storage → CDN Distribution → Global Access
+Client → POST /api/upload (multipart/form-data)
+  → API Gateway
+  → R2.put(uuid-filename, fileBlob, { httpMetadata })
+  → return { filename, size, type, url }
 ```
 
-## Performance Characteristics
+### Admin Request
+```
+Client → admin.jsherron.com/*
+  → Admin Panel Worker
+  → HTTP Basic Auth check (admin/demo123)
+  → D1 queries for stats/products/orders
+  → HTML dashboard or JSON response
+```
 
-- **Latency**: <50ms global average, 0ms cold starts
-- **Throughput**: Millions of requests per second per endpoint
-- **Availability**: 99.99%+ with automatic failover
-- **Scale**: Auto-scaling from zero to millions of concurrent users
+---
 
-## Security Model
+## Key Patterns
 
-- **Edge-native WAF**: SQL injection, XSS protection
-- **Rate Limiting**: Per-IP and per-endpoint controls
-- **Authentication**: JWT sessions stored in KV
-- **Encryption**: TLS 1.3 end-to-end, data encryption at rest
+### Service Binding (private service-to-service)
+`demo-products-api` has no public Worker route. It is only reachable via a service binding from `demo-api-gateway`. The gateway rewrites `/api/products*` → `/products*` and calls `env.PRODUCTS_API.fetch(request)` internally. This keeps the products service private to the platform.
 
-## Development Model
+### KV Cache-aside
+Products API uses a cache-aside pattern: check KV first, on miss query D1 and populate KV. Any mutation (create/update/delete/seed) deletes the cache key, ensuring consistency.
 
-- **Languages**: JavaScript/TypeScript, WebAssembly support
-- **Local Development**: Wrangler CLI with local emulation
-- **Deployment**: Git-based CI/CD integration
-- **Monitoring**: Built-in analytics and custom metrics
+### Queue-based Decoupling
+Orders are accepted synchronously and queued immediately. The gateway returns a response to the client without waiting for D1 writes or stock updates. The order processor worker handles the heavy work asynchronously.
+
+### Zone as Data Source
+`jsherron.com` is a pre-existing zone referenced via Terraform `data` source, not created by Terraform. Running `terraform destroy` will not delete the zone.
+
+---
+
+## Security
+
+- **TLS:** Strict mode — Cloudflare to origin encrypted, TLS 1.2 minimum
+- **Always HTTPS:** HTTP redirected to HTTPS at the edge
+- **Admin auth:** HTTP Basic Auth (`admin`/`demo123`) — demo only, not for production
+- **Session auth:** UUID tokens stored in KV with 24h expiry — demo only (accepts any credentials)
+- **CORS:** Open (`*`) on all API gateway responses — demo only
+- **Hotlink protection:** Enabled at zone level

@@ -1,576 +1,321 @@
-# Cloudflare Demo Platform - User Guide
+# Cloudflare Demo Platform — User Guide
 
-Complete guide for deploying, managing, and demoing the Cloudflare edge computing platform to customers.
+## Live URLs
 
-## 📋 Table of Contents
+| Endpoint | URL |
+|----------|-----|
+| API Gateway | https://api.jsherron.com |
+| Admin Panel | https://admin.jsherron.com |
 
-- [Quick Start](#quick-start)
-- [Demo Scenarios](#demo-scenarios)
-- [Customer Demo Flows](#customer-demo-flows)
-- [API Reference](#api-reference)
-- [Management](#management)
-- [Troubleshooting](#troubleshooting)
-- [Cost Management](#cost-management)
-- [Sales Tips & Positioning](#sales-tips--positioning)
+Admin credentials: `admin` / `demo123`
 
-## 🚀 Quick Start
+---
+
+## Quick Start
 
 ### Prerequisites
 
 - [Terraform](https://www.terraform.io/downloads) installed
-- Cloudflare account with Enterprise or Pro plan
-- Domain you can use for the demo
-- API token with these permissions:
-  - `Zone:Edit`, `DNS:Edit`, `Zone Settings:Edit`
-  - `Workers Scripts:Edit`, `D1:Edit`, `R2:Edit`
+- [Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update/) installed
+- Cloudflare account with an existing zone
+- API token (see token permissions below)
 
-### 1. Setup Configuration
+### Token Permissions Required
+
+| Resource | Permission |
+|----------|------------|
+| Account > Workers Scripts | Edit |
+| Account > Workers KV Storage | Edit |
+| Account > Workers R2 Storage | Edit |
+| Account > D1 | Edit |
+| Account > Queues | Edit |
+| Zone > Zone Settings | Edit |
+| Zone > DNS | Edit |
+| Zone > Workers Routes | Edit |
+| Zone > Cache Rules | Edit |
+
+### Setup
 
 ```bash
-git clone <repository>
+git clone https://github.com/cheapredwine/cloudflare-demo-terraform
 cd cloudflare-demo-terraform
 
-# Configure your settings
 cp terraform.tfvars.example terraform.tfvars
-nano terraform.tfvars
+# Edit terraform.tfvars with your values
 ```
 
-Edit `terraform.tfvars`:
+`terraform.tfvars`:
 ```hcl
-cloudflare_api_token = "your-cloudflare-api-token"
-account_id          = "your-account-id"
-zone_name           = "demo.your-company.com"
+cloudflare_api_token = "your-api-token"
+account_id           = "your-account-id"
+zone_name            = "yourdomain.com"
 ```
 
-### 2. Deploy Platform
+### Deploy
 
 ```bash
-# Full deployment (2-3 minutes)
 ./run-demo.sh deploy
-
-# Deploy with demo data
-./run-demo.sh deploy --demo
 ```
 
-### 3. Initialize Demo
+This runs `terraform init && apply`, waits for DNS, and tests endpoints. The D1 schema is applied automatically via `wrangler d1 execute` during `terraform apply` — no manual database initialization is required.
 
-1. Visit admin panel: `https://admin.demo.your-company.com`
-2. Login: `admin` / `demo123`
-3. Click **"Initialize Database"**
-4. Click **"Load Sample Data"**
+### Initialize Demo Data
 
-✅ **Demo ready!** Platform is live with sample products and ready for testing.
-
-## 🎬 Demo Scenarios
-
-### Scenario 1: Full Platform Demo (15 minutes)
-
-**"Let me show you a complete e-commerce platform running entirely at the edge"**
-
-1. **Deploy Infrastructure** (2 mins)
-   ```bash
-   ./run-demo.sh deploy
-   ```
-
-2. **Show Admin Dashboard** (2 mins)
-   - Visit `https://admin.your-domain.com`
-   - Initialize database live
-   - Load sample data (5 products appear)
-
-3. **Test API Endpoints** (5 mins)
-   ```bash
-   # Show product catalog
-   curl https://api.your-domain.com/products | jq .
-   
-   # Create order (triggers async processing)
-   curl -X POST https://api.your-domain.com/products \
-     -H "Content-Type: application/json" \
-     -d '{"name":"Demo Product","price":49.99,"stock":100}'
-   
-   # Process order through queue
-   curl -X POST https://api.your-domain.com/orders \
-     -H "Content-Type: application/json" \
-     -d '{"customer_id":"demo","items":[{"product_id":1,"quantity":2,"unit_price":49.99}],"total":99.98}'
-   ```
-
-4. **Show Real-time Features** (3 mins)
-   - Upload file to R2: `curl -F "file=@image.jpg" https://api.your-domain.com/upload`
-   - Check admin panel - see new order, updated stock
-   - Show caching: repeated API calls are instant
-
-5. **Highlight Architecture** (3 mins)
-   - All business logic at the edge (0ms latency)
-   - Distributed storage (D1, KV, R2, Queues)
-   - Auto-scaling to millions of requests
-   - Built-in security (WAF, rate limiting)
-
-### Scenario 2: Developer Experience (10 minutes)
-
-**"See how fast developers can build and deploy"**
-
-1. **Code Walkthrough** (3 mins)
-   - Show `workers/api-gateway.js` - full API in <200 lines
-   - Explain bindings to D1, KV, R2, Queues
-   - Point out built-in edge features
-
-2. **Live Deployment** (5 mins)
-   ```bash
-   ./run-demo.sh deploy
-   # Show real-time deployment logs
-   ```
-
-3. **Instant Global Scale** (2 mins)
-   - Test from multiple locations
-   - Show edge analytics
-   - Demonstrate zero cold starts
-
-### Scenario 3: Reset Demo (2 minutes)
-
-**For multiple demos in same session:**
+After deploy, seed the product catalog:
 
 ```bash
-# Between demos - reset data only
+# Via script
 ./run-demo.sh reset
 
-# Fresh start - full redeploy
-./run-demo.sh fresh
+# Or via API directly
+curl -X POST https://api.jsherron.com/api/products/seed
 ```
 
-## 🎯 Customer Demo Flows
+Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample Data**.
 
-### For Developers/CTOs (15 mins)
-**Focus:** Development speed, modern architecture, scalability
+---
 
-**Opening:**
-> "What if I told you that you could deploy a complete application backend globally in 2 minutes, with zero servers to manage?"
+## Demo Scripts
 
-**Flow:**
-1. Architecture overview (3 mins) - Show diagram, explain edge-first
-2. Live deployment (4 mins) - Deploy while explaining resources
-3. Code walkthrough (3 mins) - Show workers/api-gateway.js
-4. Live testing (2 mins) - API calls, admin panel
-5. Scale discussion (3 mins) - Global reach, performance
+| Script | Purpose |
+|--------|---------|
+| `./run-demo.sh deploy` | Deploy all infrastructure |
+| `./run-demo.sh reset` | Re-seed data, keep infrastructure |
+| `./run-demo.sh test` | Basic endpoint health checks |
+| `./run-demo.sh destroy` | Tear down all Terraform-managed resources |
+| `./run-demo.sh fresh` | Destroy + redeploy |
+| `./run-demo.sh deploy --demo` | Deploy then run a demo API flow |
+| `./test.sh` | Full 45-test production integration suite |
+| `./demo-latency.sh` | Cache HIT vs MISS latency comparison |
+| `./demo-analytics.sh` | Generate traffic + print dashboard links |
 
-**Key Points:**
-- Edge-native development patterns
-- 0ms cold starts vs 100-1000ms serverless
-- Integrated platform vs 10+ services
+---
 
-### For Business/Product (8 mins)
-**Focus:** Time-to-market, cost efficiency, global reach
+## Demo Scenarios
 
-**Opening:**
-> "Traditional cloud infrastructure takes weeks to set up and months to scale globally. Let me show you a different approach."
+### Scenario 1: Full Platform Demo (15 min)
 
-**Flow:**
-1. Problem statement (2 mins) - Traditional complexity
-2. Solution demo (3 mins) - Deploy while talking
-3. Business impact (3 mins) - Time/cost/scale benefits
+**"A complete e-commerce backend running entirely at the edge."**
 
-**Key Points:**
-- Weeks → Minutes deployment
-- Pay-per-request vs idle servers
-- Instant global distribution
+**1. Architecture (3 min)**
+- Open `docs/architecture.png`
+- 4 Workers, D1, KV, R2, Queue — all Cloudflare-native
+- No servers, no VMs, no containers
 
-### For Operations/DevOps (10 mins)
-**Focus:** Infrastructure management, scaling, monitoring
+**2. Admin Panel (2 min)**
+- Visit https://admin.jsherron.com (admin / demo123)
+- Show live stats, product catalog, order history
 
-**Opening:**
-> "Imagine never having to think about servers, scaling, or maintenance again."
-
-**Flow:**
-1. Current challenges (2 mins)
-2. Demo deployment (4 mins) - Zero infrastructure management
-3. Operational benefits (4 mins) - Auto-scaling, monitoring
-
-**Key Points:**
-- Zero server management
-- Built-in observability
-- Automatic global scaling
-
-## 📚 API Reference
-
-### Products API
-
-```bash
-# List all products
-GET https://api.your-domain.com/products
-
-# Get specific product  
-GET https://api.your-domain.com/products/1
-
-# Create product
-POST https://api.your-domain.com/products
-Content-Type: application/json
-{
-  "name": "Product Name",
-  "description": "Product description",
-  "price": 29.99,
-  "category": "electronics", 
-  "stock": 50
-}
-
-# Update product
-PUT https://api.your-domain.com/products/1
-Content-Type: application/json
-{
-  "price": 24.99,
-  "stock": 75
-}
-
-# Delete product
-DELETE https://api.your-domain.com/products/1
-```
-
-### Orders API
-
-```bash
-# Create order (async processing)
-POST https://api.your-domain.com/orders
-Content-Type: application/json
-{
-  "customer_id": "cust_123",
-  "items": [
-    {
-      "product_id": 1,
-      "quantity": 2,
-      "unit_price": 29.99
-    }
-  ],
-  "total": 59.98
-}
-
-# Response
-{
-  "order_id": "uuid-here",
-  "status": "queued", 
-  "message": "Order received and queued for processing"
-}
-```
-
-### Authentication API
-
-```bash
-# Login
-POST https://api.your-domain.com/auth/login
-Content-Type: application/json
-{
-  "email": "user@example.com",
-  "password": "password"
-}
-
-# Response
-{
-  "session_id": "uuid-here",
-  "user": {
-    "id": "user-uuid",
-    "email": "user@example.com"
-  },
-  "expires_at": "2024-12-07T10:30:00Z"
-}
-
-# Get user info
-GET https://api.your-domain.com/auth/me
-Authorization: Bearer session-uuid
-```
-
-### File Upload API
-
-```bash
-# Upload file to R2
-POST https://api.your-domain.com/upload
-Content-Type: multipart/form-data
-
-curl -X POST https://api.your-domain.com/upload \
-  -F "file=@image.jpg"
-
-# Response
-{
-  "filename": "uuid-image.jpg",
-  "size": 245760,
-  "type": "image/jpeg", 
-  "url": "https://uploads.your-domain.com/uuid-image.jpg"
-}
-```
-
-## 🛠️ Management
-
-### Platform Management
-
-```bash
-# Deploy fresh platform
-./run-demo.sh deploy
-
-# Reset data between demos  
-./run-demo.sh reset
-
-# Test existing deployment
-./run-demo.sh test
-
-# Complete teardown
-./run-demo.sh destroy
-
-# Fresh deployment (destroy + deploy)
-./run-demo.sh fresh
-
-# Deploy with demo data
-./run-demo.sh deploy --demo
-```
-
-### Admin Interface
-
-Visit: `https://admin.your-domain.com`
-- **Username:** `admin`  
-- **Password:** `demo123`
-
-**Available Actions:**
-- Initialize Database (creates SQL schema)
-- Load Sample Data (adds 5 demo products)
-- View real-time stats
-- Browse products and orders
-- Monitor platform health
-
-### Data Management
-
+**3. API Demo (5 min)**
 ```bash
 # Seed sample products
-curl -X POST https://api.your-domain.com/products/seed
+curl -X POST https://api.jsherron.com/api/products/seed | jq .
 
-# Clear cache
-curl -X DELETE https://api.your-domain.com/cache
+# List products
+curl https://api.jsherron.com/api/products | jq .
 
-# Reset database (via admin)
-curl -X POST https://admin.your-domain.com/setup \
-  -u admin:demo123
+# Create an order (async via queue)
+curl -X POST https://api.jsherron.com/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customer_id":"demo","items":[{"product_id":1,"quantity":1,"unit_price":24.99}],"total":24.99}' | jq .
+
+# Upload a file to R2
+curl -X POST https://api.jsherron.com/api/upload -F "file=@README.md" | jq .
+
+# Auth flow
+SESSION=$(curl -s -X POST https://api.jsherron.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@example.com","password":"demo"}' | jq -r .session_id)
+curl https://api.jsherron.com/api/auth/me -H "Authorization: Bearer $SESSION" | jq .
 ```
 
-## 🔍 Troubleshooting
+**4. Cache Demo (3 min)**
+```bash
+./demo-latency.sh
+```
+Shows average MISS latency (D1 query) vs HIT latency (KV), with speedup ratio.
 
-### Common Issues
+**5. Analytics (2 min)**
+```bash
+./demo-analytics.sh
+```
+Generates ~75 requests across all workers, prints direct links to Workers Analytics dashboard.
+
+---
+
+### Scenario 2: Developer Deep-Dive (10 min)
+
+**"Modern edge-native development."**
+
+1. **Code walkthrough** — `workers/api-gateway.js`: routing, CORS, service binding call
+2. **Service binding** — show `demo-products-api` has no public route; proxied privately
+3. **Queue pattern** — `workers/order-processor.js`: queue consumer, stock decrement
+4. **Terraform** — `main.tf`: all infra as code, one file, one apply
+5. **Live deploy** — run `./run-demo.sh deploy` and show output
+
+---
+
+### Scenario 3: Operations Demo (8 min)
+
+**"Zero infrastructure management."**
+
+1. Show `terraform plan -destroy` — list of what gets cleaned up
+2. Run `./test.sh` — 45 automated production tests
+3. Open Cloudflare Dashboard → Workers & Pages → show analytics, logs, CPU time
+4. Reset between demos: `./run-demo.sh reset` (seconds, not minutes)
+
+---
+
+## API Reference
+
+### Products
+
+```bash
+# List (10min KV cache, X-Products-Cache: HIT/MISS)
+curl https://api.jsherron.com/api/products
+
+# Get single
+curl https://api.jsherron.com/api/products/1
+
+# Create
+curl -X POST https://api.jsherron.com/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Widget","price":29.99,"category":"electronics","stock":50}'
+
+# Update
+curl -X PUT https://api.jsherron.com/api/products/1 \
+  -H "Content-Type: application/json" \
+  -d '{"price":24.99,"stock":75}'
+
+# Delete
+curl -X DELETE https://api.jsherron.com/api/products/1
+
+# Seed 5 sample products
+curl -X POST https://api.jsherron.com/api/products/seed
+```
+
+### Orders
+
+```bash
+# Create order (queued for async processing)
+curl -X POST https://api.jsherron.com/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "cust_123",
+    "items": [{"product_id": 1, "quantity": 2, "unit_price": 24.99}],
+    "total": 49.98
+  }'
+```
+
+### Auth
+
+```bash
+# Login (accepts any email/password — demo only)
+curl -X POST https://api.jsherron.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"any"}'
+
+# Get session user
+curl https://api.jsherron.com/api/auth/me \
+  -H "Authorization: Bearer <session-id>"
+```
+
+### Upload
+
+```bash
+curl -X POST https://api.jsherron.com/api/upload \
+  -F "file=@yourfile.jpg"
+```
+
+### Admin Panel API
+
+```bash
+# Stats
+curl -u admin:demo123 https://admin.jsherron.com/api/stats
+
+# Products (last 10)
+curl -u admin:demo123 https://admin.jsherron.com/api/products
+
+# Orders (last 10)
+curl -u admin:demo123 https://admin.jsherron.com/api/orders
+
+# Initialize/reset DB schema
+curl -X POST -u admin:demo123 https://admin.jsherron.com/setup
+```
+
+---
+
+## Troubleshooting
 
 **"terraform.tfvars not found"**
 ```bash
 cp terraform.tfvars.example terraform.tfvars
-# Edit with your settings
+# Fill in cloudflare_api_token, account_id, zone_name
 ```
 
-**"API endpoints not responding"** 
+**"Authentication error" on apply**
+Check your token has all required permissions (see Quick Start above).
+
+**"jsherron.com already exists" on apply**
+Normal — the zone is pre-existing and referenced as a data source. The error means a previous session tried to create it. Run `terraform apply` again; it will skip zone creation.
+
+**API returns `error code: 1101`**
+Worker threw an uncaught exception. Check Workers logs:
 ```bash
-# Test deployment
-./run-demo.sh test
-
-# Check DNS propagation (wait 2-3 minutes)
-dig api.your-domain.com
-
-# Redeploy if needed
-./run-demo.sh fresh
+wrangler tail demo-api-gateway
 ```
 
-**"Database not initialized"**
-- Visit admin panel: `https://admin.your-domain.com`
-- Click "Initialize Database"
-- Or via API: `curl -X POST https://admin.your-domain.com/setup -u admin:demo123`
+**"Database not initialized" in admin panel**
+Run `terraform apply` — the D1 schema is applied automatically. Or manually:
+```bash
+curl -X POST -u admin:demo123 https://admin.jsherron.com/setup
+```
 
 **"No sample data"**
 ```bash
-curl -X POST https://api.your-domain.com/products/seed
+curl -X POST https://api.jsherron.com/api/products/seed
 ```
 
-### Health Checks
-
+**Logs and debugging**
 ```bash
-# Test all endpoints
-./run-demo.sh test
+# Real-time worker logs
+wrangler tail demo-api-gateway
+wrangler tail demo-products-api
+wrangler tail demo-admin-panel
+wrangler tail demo-order-processor
 
-# Manual endpoint testing
-curl -I https://api.your-domain.com/products
-curl -I https://admin.your-domain.com
+# Dashboard
+# Workers & Pages → [worker name] → Logs tab
 ```
-
-### Logs and Debugging
-
-**Worker Logs:**
-- Cloudflare Dashboard → Workers & Pages → Your Worker → Logs
-- Real-time tail: `wrangler tail worker-name`
-
-**Common HTTP Codes:**
-- `200` - Success
-- `401` - Admin panel (auth required) ✅
-- `404` - Endpoint not found
-- `500` - Check worker logs
-
-## 💰 Cost Management
-
-### Cost Breakdown
-
-| Component | Usage | Monthly Cost |
-|-----------|-------|-------------|
-| **Enterprise Zone** | 1 zone | $200 |
-| **Workers** | 1M requests | $0.50 |
-| **D1 Database** | 100K reads, 10K writes | $1.00 |
-| **KV Storage** | 1GB, 1M operations | $1.00 |
-| **R2 Storage** | 10GB, 100K requests | $1.00 |
-| **Queues** | 1M operations | $0.40 |
-| **Total** | | **~$203.90** |
-
-### Cost Optimization
-
-**For Frequent Demos:**
-- Keep one permanent demo environment
-- Use `./run-demo.sh reset` between demos
-- Cost: ~$200/month fixed
-
-**For Occasional Demos:**  
-- Deploy fresh each time: `./run-demo.sh deploy`
-- Destroy after: `./run-demo.sh destroy`
-- Cost: ~$0.01 per demo
-
-**For Multiple Concurrent Demos:**
-```bash
-# Use different domains
-zone_name = "demo1.company.com"  # Sales demo
-zone_name = "demo2.company.com"  # Engineering demo
-zone_name = "demo3.company.com"  # Customer POC
-```
-
-### Monitoring Costs
-
-- **Cloudflare Dashboard** → Billing → Usage
-- **Set up billing alerts** for unexpected usage
-- **Review monthly** - most costs are predictable
-
-## 🎯 Demo Tips
-
-### Before Demo
-- [ ] Test deployment: `./run-demo.sh test`
-- [ ] Have backup domain ready
-- [ ] Prepare talking points
-- [ ] Check internet connection
-
-### During Demo
-- [ ] Start with big picture (architecture diagram)
-- [ ] Show admin panel first (visual impact)
-- [ ] Use curl commands for technical audience
-- [ ] Highlight real-time aspects (order processing)
-- [ ] Emphasize global scale and performance
-
-### After Demo
-- [ ] Leave environment running for follow-up questions
-- [ ] Share API endpoints for exploration
-- [ ] Provide documentation links
-- [ ] Schedule follow-up if interested
-
-### Recovery Plans
-- **Demo fails:** Have backup video recording
-- **Slow deployment:** Pre-deploy earlier, use existing
-- **API errors:** Use `./run-demo.sh reset` and retry
-- **DNS issues:** Have alternative domain ready
 
 ---
 
-## 📞 Support
+## Teardown
 
-- **Platform Issues:** Check [troubleshooting](#troubleshooting)
-- **Terraform Errors:** Review terraform logs
-- **Cloudflare Issues:** Check Cloudflare status page
-- **Demo Questions:** See agent documentation
+Before destroying, review what will be deleted:
 
-## 🚀 Sales Tips & Positioning
+```bash
+terraform plan -destroy
+```
 
-### Target Audiences
+This removes: D1 database (all data), KV namespaces, R2 bucket, Queue, all 4 Workers, Worker routes, Cache Rules, and DNS records for `api.*`, `admin.*`. The `jsherron.com` zone itself is NOT deleted (it's a data source).
 
-**Developers/CTOs:**
-- **Pain:** Complex infrastructure, slow deployments, scaling challenges
-- **Message:** Modern development platform, instant global scale
-- **Demo:** Code walkthrough, live deployment, performance comparison
+```bash
+./run-demo.sh destroy
+```
 
-**Operations/DevOps:**
-- **Pain:** Server management, capacity planning, multi-region complexity  
-- **Message:** Zero infrastructure management, built-in scaling
-- **Demo:** Deployment speed, automatic scaling, monitoring
+---
 
-**Business/Product:**
-- **Pain:** Time-to-market, development costs, global expansion
-- **Message:** Speed to market, predictable costs, instant global reach
-- **Demo:** Business impact focus, cost comparison
+## Cost Notes
 
-### Key Talking Points
+The zone (`jsherron.com`) is pre-existing — no zone cost is added by this demo. Incremental costs during demo use:
 
-**Opening Hooks:**
-- "Deploy a complete application backend globally in 2 minutes"
-- "Most companies spend 6 months building infrastructure - we'll do it now"
-- "What if you never had to think about servers again?"
+| Component | Free tier | Overage |
+|-----------|-----------|---------|
+| Workers | 100K req/day | $0.50/million |
+| D1 | 5M reads, 100K writes/day | $0.001/million reads |
+| KV | 100K reads/day | $0.50/million reads |
+| R2 | 10GB storage, 1M ops/month | $0.015/GB |
+| Queues | 1M ops/month | $0.40/million |
 
-**Technical Differentiators:**
-- **Edge-Native:** Code runs in 300+ cities, not 3-5 regions
-- **Zero Cold Starts:** 0ms vs 100-1000ms serverless functions
-- **Integrated Platform:** One platform vs 10+ cloud services
-- **Global State:** Built-in distributed storage
-
-**Business Value:**
-- **Speed:** 3-6 months infrastructure → 2 minutes deployment
-- **Scale:** Instant global deployment vs complex multi-region
-- **Cost:** Pay-per-request vs idle server costs
-- **Focus:** Build features, not infrastructure
-
-### Competitive Positioning
-
-**vs AWS Lambda + API Gateway:**
-- Cold starts: 0ms vs 100-1000ms
-- Complexity: Single platform vs 10+ services  
-- Global: 300+ cities vs 25 regions
-- Pricing: Predictable vs complex tiered
-
-**vs Traditional Cloud:**
-- Setup time: 2 minutes vs 3-6 months
-- Management: Zero vs complex DevOps
-- Scale: Automatic vs manual planning
-
-### Demo Best Practices
-
-**Before Demo:**
-- [ ] Test deployment: `./run-demo.sh test`
-- [ ] Prepare backup domain
-- [ ] Have curl commands ready
-- [ ] Check internet connection
-
-**During Demo:**
-- [ ] Start with architecture overview
-- [ ] Show admin panel for visual impact
-- [ ] Use technical commands for developers
-- [ ] Emphasize global scale (300+ cities)
-- [ ] Have recovery plan ready
-
-**After Demo:**
-- [ ] Leave environment running for exploration
-- [ ] Share API endpoints and documentation
-- [ ] Schedule technical follow-up
-- [ ] Provide trial account access
-
-### Recovery Strategies
-
-**Complete Demo Failure:**
-- Switch to pre-deployed backup environment
-- Use architecture walkthrough mode
-- Schedule follow-up with working demo
-
-**Partial Issues:**
-- `./run-demo.sh reset` for data problems
-- Show Cloudflare Dashboard as backup
-- Explain issue and recovery (builds confidence)
-
-### Follow-up Materials
-
-**Send After Demo:**
-- Link to live demo environment
-- Architecture documentation
-- API reference and code samples
-- Pricing calculator
-
-**Next Steps:**
-- Technical deep-dive meeting
-- Architecture review session
-- Custom POC discussion
-- Trial account setup
-
-Ready to demo the future of edge computing! 🚀
+A single demo session generates well under free tier limits. Keep the environment running between demos (`./run-demo.sh reset`) rather than destroying and redeploying to minimize apply time.
