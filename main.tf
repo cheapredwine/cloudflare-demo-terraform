@@ -69,13 +69,7 @@ resource "cloudflare_record" "admin" {
   proxied         = true
 }
 
-resource "cloudflare_record" "uploads" {
-  zone_id         = data.cloudflare_zone.main.id
-  name            = "uploads"
-  content         = "public.r2.dev"
-  type            = "CNAME"
-  proxied         = true
-}
+
 
 # R2 Bucket for file uploads
 resource "cloudflare_r2_bucket" "uploads" {
@@ -317,9 +311,6 @@ output "admin_panel_url" {
   value = "https://admin.${var.zone_name}"
 }
 
-output "uploads_url" {
-  value = "https://uploads.${var.zone_name}"
-}
 
 output "d1_database_id" {
   value = cloudflare_d1_database.products.id
