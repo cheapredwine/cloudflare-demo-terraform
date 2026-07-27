@@ -83,11 +83,11 @@ Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample
 |--------|---------|
 | `./run-demo.sh deploy` | Deploy all infrastructure |
 | `./run-demo.sh reset` | Re-seed data, keep infrastructure |
-| `./run-demo.sh test` | Endpoint health checks + queue consumer check |
+| `./run-demo.sh test` | Fast smoke checks for endpoints + queue consumer health |
 | `./run-demo.sh destroy` | Tear down all Terraform-managed resources |
 | `./run-demo.sh fresh` | Destroy + redeploy |
 | `./run-demo.sh deploy --demo` | Deploy then run a demo API flow |
-| `./test.sh` | Full 45-test production integration suite |
+| `./test.sh` | Full integration suite (API, admin, queue, async order persistence) |
 | `./demo-latency.sh` | Cache HIT vs MISS latency comparison |
 | `./demo-analytics.sh` | Generate traffic + print dashboard links |
 
@@ -162,7 +162,7 @@ Generates ~75 requests across all workers, prints direct links to Workers Analyt
 **"Zero infrastructure management."**
 
 1. Show `terraform plan -destroy` — list of what gets cleaned up
-2. Run `./test.sh` — 45 automated production tests
+2. Run `./test.sh` — full integration checks across APIs, admin, and async order flow
 3. Open Cloudflare Dashboard → Workers & Pages → show analytics, logs, CPU time
 4. Reset between demos: `./run-demo.sh reset` (seconds, not minutes)
 

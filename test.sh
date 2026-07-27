@@ -69,6 +69,25 @@ http_body() {
     curl -s --max-time 15 "$@"
 }
 
+wait_for_order_in_admin() {
+    local order_id="$1"
+    local max_attempts=15
+    local attempt=1
+
+    while [ "$attempt" -le "$max_attempts" ]; do
+        local body
+        body=$(http_body -u "admin:demo123" "$ADMIN/api/orders")
+        if echo "$body" | grep -q "$order_id"; then
+            return 0
+        fi
+
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
 # Writes body to $RESP_BODY, status to $RESP_STATUS
 req() {
     curl -s -w "%{http_code}" --max-time 15 -o "$RESP_BODY" "$@" > "$RESP_STATUS"
@@ -181,9 +200,29 @@ assert_status "deleted product returns 404" 404 "$status"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 4. Orders
+# 4. Queue Consumer Health
 # ---------------------------------------------------------------------------
-echo "[ 4 ] Orders"
+echo "[ 4 ] Queue Consumer"
+
+if command -v wrangler > /dev/null 2>&1; then
+    QUEUE_INFO=$(wrangler queues info demo-order-processing 2>/dev/null || true)
+    QUEUE_CONSUMERS=$(echo "$QUEUE_INFO" | grep "Number of Consumers:" | awk '{print $4}')
+
+    if [ -n "$QUEUE_CONSUMERS" ] && [ "$QUEUE_CONSUMERS" -ge 1 ]; then
+        pass "queue has active consumer(s): $QUEUE_CONSUMERS"
+    else
+        fail "queue has no consumers (orders will remain queued)"
+    fi
+else
+    echo "  SKIP  wrangler not installed; queue consumer check skipped"
+fi
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# 5. Orders
+# ---------------------------------------------------------------------------
+echo "[ 5 ] Orders"
 
 # Get first product id for order
 PRODUCTS=$(http_body "$API/api/products")
@@ -196,6 +235,17 @@ if [ -n "$FIRST_ID" ]; then
     assert_status "create order returns 200" 200 "$(get_status)"
     assert_contains "order returns order_id" "order_id" "$(get_body)"
     assert_contains "order status is queued" "queued" "$(get_body)"
+
+    ORDER_ID=$(get_body | grep -o '"order_id":"[^"]*"' | cut -d'"' -f4)
+    if [ -n "$ORDER_ID" ]; then
+        if wait_for_order_in_admin "$ORDER_ID"; then
+            pass "queued order appears in admin orders"
+        else
+            fail "queued order did not appear in admin orders within 30s"
+        fi
+    else
+        fail "could not parse order_id from create order response"
+    fi
 else
     fail "create order (no products available to order)"
 fi
@@ -209,9 +259,9 @@ assert_status "order missing items returns 400" 400 "$status"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 5. Upload
+# 6. Upload
 # ---------------------------------------------------------------------------
-echo "[ 5 ] Upload"
+echo "[ 6 ] Upload"
 
 # Create a temp file
 TMPFILE=$(mktemp /tmp/test-upload.XXXXXX.txt)
@@ -231,9 +281,9 @@ assert_status "upload with no file returns 400" 400 "$status"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 6. Admin Panel
+# 7. Admin Panel
 # ---------------------------------------------------------------------------
-echo "[ 6 ] Admin Panel"
+echo "[ 7 ] Admin Panel"
 
 # No auth
 status=$(http_status "$ADMIN/")

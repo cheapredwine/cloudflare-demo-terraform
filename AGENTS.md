@@ -127,6 +127,13 @@ Showcases Terraform features. Assumes infrastructure is deployed.
 ./terraform-demo.sh all             # Run all demos sequentially (~10 min)
 ```
 
+### test.sh — Integration Validation
+Runs end-to-end API + admin validation, including queue consumer health and async order persistence checks.
+
+```bash
+./test.sh                   # Full integration verification after deploy/changes
+```
+
 ## Recommended Demo Workflow
 
 Deploy → Platform Demos → Terraform Demos → Teardown

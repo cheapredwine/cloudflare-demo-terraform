@@ -99,7 +99,10 @@ Click "Load Sample Data" to get started.
 ```bash
 ./run-demo.sh test          # Verify endpoints + queue consumer health
 ./run-demo.sh deploy --demo # Run sample API calls
+./test.sh                   # Full integration validation (async order persistence)
 ```
+
+Use `./run-demo.sh test` for fast smoke checks. Use `./test.sh` for deeper API + admin integration coverage.
 
 **Terraform demos** (infrastructure as code concepts):
 ```bash
