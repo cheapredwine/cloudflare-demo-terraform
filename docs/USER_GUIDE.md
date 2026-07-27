@@ -80,6 +80,7 @@ Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample
 ## Demo Scripts
 
 Each script has a PowerShell twin with the same purpose (`.sh` <-> `.ps1`). Keep both in sync when changing behavior.
+Canonical implementations live under `scripts/`; root-level script names are compatibility shims.
 
 | Script | Purpose |
 |--------|---------|
@@ -165,7 +166,7 @@ Generates ~75 requests across all workers, prints direct links to Workers Analyt
 1. **Code walkthrough** — `workers/api-gateway.js`: routing, CORS, service binding call
 2. **Service binding** — show `demo-products-api` has no public route; proxied privately
 3. **Queue pattern** — `workers/order-processor.js`: queue consumer, stock decrement
-4. **Terraform** — `main.tf`: all infra as code, one file, one apply
+4. **Terraform** — modular `*.tf` layout (`workers.tf`, `storage.tf`, `routes.tf`, etc.): all infra as code, one apply
 5. **Live deploy** — run `./run-demo.sh deploy` and show output
 
 ---

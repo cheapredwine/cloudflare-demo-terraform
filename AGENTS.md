@@ -27,20 +27,33 @@ Terraform-based e-commerce demo on Cloudflare's edge stack. Deploys 4 Workers, D
 - **Username:** `admin`
 - **Password:** `demo123`
 
-After deploy, visit admin panel → click "Initialize Database" → click "Load Sample Data".
+After deploy, visit admin panel → click "Load Sample Data".
 
 ## File Layout
 
 ```
-main.tf                  # All resources (deprecated resources fixed to cloudflare_workers_*)
+providers.tf             # Terraform + provider config
+variables.tf             # Input variables
+zone.tf                  # Existing zone data source
+dns.tf                   # DNS records
+storage.tf               # D1, KV, R2, Queue resources
+workers.tf               # Worker scripts + bindings
+routes.tf                # Worker routes
+queue-consumer.tf        # Queue consumer attach/detach automation
+migrations.tf            # D1 schema + R2 cleanup null_resources
+outputs.tf               # Terraform outputs
 workers/
   api-gateway.js         # Request routing, CORS, service bindings to products_api
   products-api.js        # CRUD, KV cache, seed endpoint
   order-processor.js     # Queue batch handler, D1 writes, stock management
   admin-panel.js         # HTML dashboard, basic auth (admin/demo123)
 db/schema.sql            # D1 schema (products, orders, order_items)
-run-demo.sh              # Deploy/test/reset/destroy management script
-terraform-demo.sh        # Terraform feature demos (idempotency, drift, state, etc.)
+scripts/lifecycle/       # Lifecycle scripts (run-demo.sh/ps1)
+scripts/tests/           # Integration scripts (test.sh/ps1)
+scripts/demos/           # Demo scripts (terraform-demo, latency, analytics)
+run-demo.sh              # Root shim -> scripts/lifecycle/run-demo.sh
+terraform-demo.sh        # Root shim -> scripts/demos/terraform-demo.sh
+test.sh                  # Root shim -> scripts/tests/test.sh
 terraform.tfvars         # Account credentials (gitignored)
 ```
 
@@ -99,6 +112,7 @@ terraform workspace list          # Show workspaces
 ## Demo Scripts
 
 Shell and PowerShell versions are maintained in parallel (`*.sh` and matching `*.ps1`). Update both files whenever script behavior changes.
+Canonical scripts live under `scripts/`; root script names are compatibility shims.
 
 ### run-demo.sh — Platform Lifecycle
 Manages deploy, test, reset, destroy. Use for deploy and teardown.
