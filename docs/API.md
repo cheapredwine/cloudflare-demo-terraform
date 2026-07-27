@@ -173,7 +173,7 @@ Content-Type: application/json
 }
 ```
 
-The order is processed asynchronously. Check the admin panel to see completed orders. If orders remain queued, run `./run-demo.sh test` to verify queue consumer health.
+The order is processed asynchronously. Check the admin panel to see completed orders. If orders remain queued, run `make smoke` to verify queue consumer health.
 
 ---
 

@@ -51,9 +51,7 @@ db/schema.sql            # D1 schema (products, orders, order_items)
 scripts/lifecycle/       # Lifecycle scripts (run-demo.sh/ps1)
 scripts/tests/           # Integration scripts (test.sh/ps1)
 scripts/demos/           # Demo scripts (terraform-demo, latency, analytics)
-run-demo.sh              # Root shim -> scripts/lifecycle/run-demo.sh
-terraform-demo.sh        # Root shim -> scripts/demos/terraform-demo.sh
-test.sh                  # Root shim -> scripts/tests/test.sh
+Makefile                 # Primary entrypoints (make deploy/test/destroy/etc.)
 terraform.tfvars         # Account credentials (gitignored)
 ```
 
@@ -112,45 +110,45 @@ terraform workspace list          # Show workspaces
 ## Demo Scripts
 
 Shell and PowerShell versions are maintained in parallel (`*.sh` and matching `*.ps1`). Update both files whenever script behavior changes.
-Canonical scripts live under `scripts/`; root script names are compatibility shims.
+Canonical scripts live under `scripts/`. Preferred CLI entrypoints use `make`.
 
 ### run-demo.sh — Platform Lifecycle
 Manages deploy, test, reset, destroy. Use for deploy and teardown.
 
 ```bash
-./run-demo.sh deploy         # Deploy platform (terraform init + apply + test)
-./run-demo.sh deploy --demo  # Deploy + run sample API calls
-./run-demo.sh test           # Verify endpoints responding
-./run-demo.sh reset          # Clear DB, reload sample data (keeps infra)
-./run-demo.sh destroy        # Tear down everything (with confirmation)
-./run-demo.sh fresh          # Destroy + redeploy
-./run-demo.ps1 deploy        # PowerShell equivalent
+make deploy                  # Deploy platform (terraform init + apply + smoke checks)
+make deploy-demo             # Deploy + run sample API calls
+make smoke                   # Verify endpoints responding
+make reset                   # Clear DB, reload sample data (keeps infra)
+make destroy                 # Tear down everything (with confirmation)
+make fresh                   # Destroy + redeploy
+./scripts/lifecycle/run-demo.ps1 deploy # PowerShell equivalent
 ```
 
 ### terraform-demo.sh — Terraform Concepts
 Showcases Terraform features. Assumes infrastructure is deployed.
 
 ```bash
-./terraform-demo.sh idempotency     # Apply twice, 0 changes second time
-./terraform-demo.sh drift-detect    # Manual dashboard change → detect → reconcile
-./terraform-demo.sh state-inspect   # List resources, show state, outputs
-./terraform-demo.sh targeted        # Deploy single resource with -target
-./terraform-demo.sh plan-file       # Save plan, review, apply exact plan
-./terraform-demo.sh refresh-only    # Detect drift without changing
-./terraform-demo.sh taint-replace   # Force recreation of resource
-./terraform-demo.sh var-override staging.example.com # CLI variable override
-./terraform-demo.sh graph           # Generate dependency graph
-./terraform-demo.sh workspaces      # Create staging workspace
-./terraform-demo.sh all             # Run all demos sequentially (~10 min)
-./terraform-demo.ps1 all            # PowerShell equivalent
+./scripts/demos/terraform-demo.sh idempotency     # Apply twice, 0 changes second time
+./scripts/demos/terraform-demo.sh drift-detect    # Manual dashboard change → detect → reconcile
+./scripts/demos/terraform-demo.sh state-inspect   # List resources, show state, outputs
+./scripts/demos/terraform-demo.sh targeted        # Deploy single resource with -target
+./scripts/demos/terraform-demo.sh plan-file       # Save plan, review, apply exact plan
+./scripts/demos/terraform-demo.sh refresh-only    # Detect drift without changing
+./scripts/demos/terraform-demo.sh taint-replace   # Force recreation of resource
+./scripts/demos/terraform-demo.sh var-override staging.example.com # CLI variable override
+./scripts/demos/terraform-demo.sh graph           # Generate dependency graph
+./scripts/demos/terraform-demo.sh workspaces      # Create staging workspace
+make tf-all                                       # Run all demos sequentially (~10 min)
+./scripts/demos/terraform-demo.ps1 all            # PowerShell equivalent
 ```
 
 ### test.sh — Integration Validation
 Runs end-to-end API + admin validation, including queue consumer health and async order persistence checks.
 
 ```bash
-./test.sh                   # Full integration verification after deploy/changes
-./test.ps1                  # PowerShell equivalent
+make test                              # Full integration verification after deploy/changes
+./scripts/tests/test.ps1              # PowerShell equivalent
 ```
 
 ## Recommended Demo Workflow
@@ -159,26 +157,26 @@ Deploy → Platform Demos → Terraform Demos → Teardown
 
 ```bash
 # 1. Deploy platform
-./run-demo.sh deploy
+make deploy
 
 # 2. Platform demos
-./run-demo.sh test          # Verify endpoints
-./run-demo.sh deploy --demo # Run sample API calls
+make smoke                  # Verify endpoints
+make deploy-demo            # Run sample API calls
 
 # 3. Terraform demos
-./terraform-demo.sh state-inspect
-./terraform-demo.sh drift-detect    # Requires manual dashboard change
-./terraform-demo.sh idempotency
-./terraform-demo.sh plan-file
-./terraform-demo.sh refresh-only
+./scripts/demos/terraform-demo.sh state-inspect
+./scripts/demos/terraform-demo.sh drift-detect    # Requires manual dashboard change
+./scripts/demos/terraform-demo.sh idempotency
+./scripts/demos/terraform-demo.sh plan-file
+./scripts/demos/terraform-demo.sh refresh-only
 
 # 4. Teardown
-./run-demo.sh destroy
+make destroy
 ```
 
 **Total runtime:** ~5-10 minutes for full cycle.
 
-**Note:** `terraform-demo.sh` does NOT auto-teardown. Always end with `./run-demo.sh destroy`.
+**Note:** `terraform-demo.sh` does NOT auto-teardown. Always end with `make destroy`.
 
 ## Environment Setup
 
@@ -218,4 +216,4 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 - Zone: jsherron.com (ID: 6bcf8859da225392d8fae3351eb5de3e)
 - Account: 1ddebf6f9507d3fc9052158be9d42dee
 - Terraform provider v4.52.8
-- Run `./run-demo.sh deploy` to deploy infrastructure
+- Run `make deploy` to deploy infrastructure

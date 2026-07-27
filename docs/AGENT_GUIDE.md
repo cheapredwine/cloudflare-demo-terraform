@@ -420,7 +420,7 @@ wrangler tail demo-api-gateway
 wrangler tail demo-products-api
 
 # Run full test suite
-./test.sh
+make test
 ```
 
 ---
@@ -447,7 +447,7 @@ async function handleNewFeature(request, env, corsHeaders) {
 }
 ```
 
-3. Add test case to `test.sh`.
+3. Add test case to `scripts/tests/test.sh`.
 
 ### Adding a New KV Namespace
 

@@ -74,7 +74,7 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 This repo is designed for demos. Deploy, run demos, tear down.
 
 PowerShell equivalents exist for every user-facing shell script (`*.sh` and matching `*.ps1`). Keep both versions updated together.
-Canonical script implementations live under `scripts/`; root script names are compatibility shims.
+Canonical script implementations live under `scripts/`.
 
 Terraform is organized by concern across multiple files (`providers.tf`, `dns.tf`, `storage.tf`, `workers.tf`, `routes.tf`, `migrations.tf`, etc.) for readability.
 
@@ -86,7 +86,7 @@ cp terraform.tfvars.example terraform.tfvars
 
 ### Step 2: Deploy Platform
 ```bash
-./run-demo.sh deploy
+make deploy
 ```
 
 Deploy now auto-registers Queue consumer (`demo-order-processor`) and fails fast if consumer is missing.
@@ -102,46 +102,46 @@ Click "Load Sample Data" to get started.
 
 **Platform demos** (API, admin panel, workers):
 ```bash
-./run-demo.sh test          # Verify endpoints + queue consumer health
-./run-demo.sh deploy --demo # Run sample API calls
-./test.sh                   # Full integration validation (async order persistence)
+make smoke       # Verify endpoints + queue consumer health
+make deploy-demo # Run sample API calls
+make test        # Full integration validation (async order persistence)
 ```
 
 ```powershell
-./run-demo.ps1 test
-./run-demo.ps1 deploy --demo
-./test.ps1
+./scripts/lifecycle/run-demo.ps1 test
+./scripts/lifecycle/run-demo.ps1 deploy --demo
+./scripts/tests/test.ps1
 ```
 
-Use `./run-demo.sh test` for fast smoke checks. Use `./test.sh` for deeper API + admin integration coverage.
+Use `make smoke` for fast checks. Use `make test` for deeper API + admin integration coverage.
 
 **Terraform demos** (infrastructure as code concepts):
 ```bash
-./terraform-demo.sh state-inspect   # Show state and outputs
-./terraform-demo.sh drift-detect    # Detect manual dashboard changes
-./terraform-demo.sh idempotency     # Apply twice, 0 changes
-./terraform-demo.sh targeted        # Deploy single resource
-./terraform-demo.sh plan-file       # Save and apply exact plan
-./terraform-demo.sh refresh-only    # Detect drift without changing
-./terraform-demo.sh taint-replace   # Force recreation
-./terraform-demo.sh var-override staging.example.com  # Override variables
-./terraform-demo.sh graph           # Dependency graph
-./terraform-demo.sh workspaces      # Multiple environments
+./scripts/demos/terraform-demo.sh state-inspect   # Show state and outputs
+./scripts/demos/terraform-demo.sh drift-detect    # Detect manual dashboard changes
+./scripts/demos/terraform-demo.sh idempotency     # Apply twice, 0 changes
+./scripts/demos/terraform-demo.sh targeted        # Deploy single resource
+./scripts/demos/terraform-demo.sh plan-file       # Save and apply exact plan
+./scripts/demos/terraform-demo.sh refresh-only    # Detect drift without changing
+./scripts/demos/terraform-demo.sh taint-replace   # Force recreation
+./scripts/demos/terraform-demo.sh var-override staging.example.com  # Override variables
+./scripts/demos/terraform-demo.sh graph           # Dependency graph
+./scripts/demos/terraform-demo.sh workspaces      # Multiple environments
 ```
 
 ```powershell
-./terraform-demo.ps1 state-inspect
-./terraform-demo.ps1 all
+./scripts/demos/terraform-demo.ps1 state-inspect
+./scripts/demos/terraform-demo.ps1 all
 ```
 
 Run all Terraform demos:
 ```bash
-./terraform-demo.sh all
+make tf-all
 ```
 
 ### Step 4: Teardown
 ```bash
-./run-demo.sh destroy
+make destroy
 ```
 
 **Total runtime:** ~5-10 minutes for full deploy + demos + destroy.
