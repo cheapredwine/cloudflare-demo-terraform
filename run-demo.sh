@@ -26,6 +26,7 @@ show_help() {
     echo "Options:"
     echo "  --demo      Run demo commands after deployment"
     echo "  --zone NAME Override zone name from terraform.tfvars"
+    echo "  --zone=NAME Override zone name from terraform.tfvars"
     echo ""
     echo "Examples:"
     echo "  ./run-demo.sh deploy --demo"
@@ -58,11 +59,23 @@ check_prerequisites() {
 
 get_zone_name() {
     # Check for --zone override
-    for arg in "$@"; do
+    local args=("$@")
+    local i=0
+    while [ $i -lt ${#args[@]} ]; do
+        local arg="${args[$i]}"
         if [[ $arg == --zone=* ]]; then
             ZONE_NAME="${arg#*=}"
             return
+        elif [ "$arg" == "--zone" ]; then
+            i=$((i + 1))
+            if [ $i -ge ${#args[@]} ] || [[ "${args[$i]}" == --* ]]; then
+                echo "❌ Missing value for --zone"
+                exit 1
+            fi
+            ZONE_NAME="${args[$i]}"
+            return
         fi
+        i=$((i + 1))
     done
     
     # Extract from terraform.tfvars
@@ -77,10 +90,23 @@ get_zone_name() {
 }
 
 check_prerequisites
-get_zone_name "$@"
+
+needs_zone_name() {
+    case "$ACTION" in
+        deploy|reset|fresh|test)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
 
 echo "📋 Configuration:"
-echo "   Zone: $ZONE_NAME"
+if needs_zone_name; then
+    get_zone_name "$@"
+    echo "   Zone: $ZONE_NAME"
+fi
 echo "   Action: $ACTION"
 echo ""
 
@@ -252,7 +278,7 @@ show_success_message() {
 
 show_quick_start() {
     echo "📚 Quick Start:"
-    echo "   1. Visit the admin panel and initialize the database"
+    echo "   1. Visit the admin panel"
     echo "   2. Load sample data using the 'Load Sample Data' button"
     echo "   3. Test the API endpoints:"
     echo ""

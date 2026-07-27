@@ -49,7 +49,7 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 - **Cloudflare Zone** with Enterprise features
 - **DNS Records** for all services
 - **SSL/TLS** with strict security policies
-- **Page Rules** for optimal caching
+- **Cache Rules** for optimal caching
 
 ### ⚡ Edge Computing
 - **API Gateway Worker** - Request routing, auth, CORS
@@ -91,7 +91,7 @@ After deploy completes, access the admin panel:
 - **Username:** `admin`
 - **Password:** `demo123`
 
-Click "Initialize Database" then "Load Sample Data" to get started.
+Click "Load Sample Data" to get started.
 
 ### Step 3: Run Demos
 
@@ -110,7 +110,7 @@ Click "Initialize Database" then "Load Sample Data" to get started.
 ./terraform-demo.sh plan-file       # Save and apply exact plan
 ./terraform-demo.sh refresh-only    # Detect drift without changing
 ./terraform-demo.sh taint-replace   # Force recreation
-./terraform-demo.sh var-override    # Override variables
+./terraform-demo.sh var-override staging.example.com  # Override variables
 ./terraform-demo.sh graph           # Dependency graph
 ./terraform-demo.sh workspaces      # Multiple environments
 ```
@@ -138,24 +138,26 @@ Run all Terraform demos:
 
 ## API Endpoints
 
+Quick samples below. Full reference in `docs/API.md`.
+
 ### Products API
 ```bash
 # Get all products
-curl https://api.your-domain.com/products
+curl https://api.your-domain.com/api/products
 
 # Create product
-curl -X POST https://api.your-domain.com/products \
+curl -X POST https://api.your-domain.com/api/products \
   -H "Content-Type: application/json" \
   -d '{"name": "Test Product", "price": 19.99, "stock": 100}'
 
 # Get specific product
-curl https://api.your-domain.com/products/1
+curl https://api.your-domain.com/api/products/1
 ```
 
 ### Orders API
 ```bash
 # Create order
-curl -X POST https://api.your-domain.com/orders \
+curl -X POST https://api.your-domain.com/api/orders \
   -H "Content-Type: application/json" \
   -d '{
     "customer_id": "cust123",
@@ -167,19 +169,19 @@ curl -X POST https://api.your-domain.com/orders \
 ### Authentication
 ```bash
 # Login
-curl -X POST https://api.your-domain.com/auth/login \
+curl -X POST https://api.your-domain.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "password"}'
 
 # Get user info
-curl https://api.your-domain.com/auth/me \
+curl https://api.your-domain.com/api/auth/me \
   -H "Authorization: Bearer <session-id>"
 ```
 
 ### File Upload
 ```bash
 # Upload file
-curl -X POST https://api.your-domain.com/upload \
+curl -X POST https://api.your-domain.com/api/upload \
   -F "file=@image.jpg"
 ```
 

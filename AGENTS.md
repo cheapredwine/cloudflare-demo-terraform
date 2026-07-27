@@ -121,7 +121,7 @@ Showcases Terraform features. Assumes infrastructure is deployed.
 ./terraform-demo.sh plan-file       # Save plan, review, apply exact plan
 ./terraform-demo.sh refresh-only    # Detect drift without changing
 ./terraform-demo.sh taint-replace   # Force recreation of resource
-./terraform-demo.sh var-override    # CLI variable override
+./terraform-demo.sh var-override staging.example.com # CLI variable override
 ./terraform-demo.sh graph           # Generate dependency graph
 ./terraform-demo.sh workspaces      # Create staging workspace
 ./terraform-demo.sh all             # Run all demos sequentially (~10 min)
