@@ -73,6 +73,8 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 
 This repo is designed for demos. Deploy, run demos, tear down.
 
+PowerShell equivalents exist for every user-facing shell script (`*.sh` and matching `*.ps1`). Keep both versions updated together.
+
 ### Step 1: Configure
 ```bash
 cp terraform.tfvars.example terraform.tfvars
@@ -102,6 +104,12 @@ Click "Load Sample Data" to get started.
 ./test.sh                   # Full integration validation (async order persistence)
 ```
 
+```powershell
+./run-demo.ps1 test
+./run-demo.ps1 deploy --demo
+./test.ps1
+```
+
 Use `./run-demo.sh test` for fast smoke checks. Use `./test.sh` for deeper API + admin integration coverage.
 
 **Terraform demos** (infrastructure as code concepts):
@@ -116,6 +124,11 @@ Use `./run-demo.sh test` for fast smoke checks. Use `./test.sh` for deeper API +
 ./terraform-demo.sh var-override staging.example.com  # Override variables
 ./terraform-demo.sh graph           # Dependency graph
 ./terraform-demo.sh workspaces      # Multiple environments
+```
+
+```powershell
+./terraform-demo.ps1 state-inspect
+./terraform-demo.ps1 all
 ```
 
 Run all Terraform demos:

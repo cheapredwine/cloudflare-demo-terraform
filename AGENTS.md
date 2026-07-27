@@ -98,6 +98,8 @@ terraform workspace list          # Show workspaces
 
 ## Demo Scripts
 
+Shell and PowerShell versions are maintained in parallel (`*.sh` and matching `*.ps1`). Update both files whenever script behavior changes.
+
 ### run-demo.sh — Platform Lifecycle
 Manages deploy, test, reset, destroy. Use for deploy and teardown.
 
@@ -108,6 +110,7 @@ Manages deploy, test, reset, destroy. Use for deploy and teardown.
 ./run-demo.sh reset          # Clear DB, reload sample data (keeps infra)
 ./run-demo.sh destroy        # Tear down everything (with confirmation)
 ./run-demo.sh fresh          # Destroy + redeploy
+./run-demo.ps1 deploy        # PowerShell equivalent
 ```
 
 ### terraform-demo.sh — Terraform Concepts
@@ -125,6 +128,7 @@ Showcases Terraform features. Assumes infrastructure is deployed.
 ./terraform-demo.sh graph           # Generate dependency graph
 ./terraform-demo.sh workspaces      # Create staging workspace
 ./terraform-demo.sh all             # Run all demos sequentially (~10 min)
+./terraform-demo.ps1 all            # PowerShell equivalent
 ```
 
 ### test.sh — Integration Validation
@@ -132,6 +136,7 @@ Runs end-to-end API + admin validation, including queue consumer health and asyn
 
 ```bash
 ./test.sh                   # Full integration verification after deploy/changes
+./test.ps1                  # PowerShell equivalent
 ```
 
 ## Recommended Demo Workflow
