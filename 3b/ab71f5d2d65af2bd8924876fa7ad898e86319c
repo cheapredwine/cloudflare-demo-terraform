@@ -1,0 +1,19 @@
+.terraform.lock.hcl
+  s_b827a1bef6b8fb::t_5aaeb4c79953e7 5,8-12,14-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3bab71f5d2d65af2bd8924876fa7ad898e86319c",
+  "prompts": {},
+  "sessions": {
+    "s_b827a1bef6b8fb": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_05b8bb8a4ffexP7EabPI7YqQUX",
+        "model": "@cf/moonshotai/kimi-k2.6"
+      },
+      "human_author": "Jason Sherron <jsherron@cloudflare.com>"
+    }
+  }
+}
