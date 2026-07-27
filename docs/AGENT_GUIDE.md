@@ -198,7 +198,7 @@ zone_id = data.cloudflare_zone.main.id
 ### Worker Script with All Binding Types
 
 ```hcl
-resource "cloudflare_worker_script" "api_gateway" {
+resource "cloudflare_workers_script" "api_gateway" {
   account_id = var.account_id
   name       = "demo-api-gateway"
   content    = file("${path.module}/workers/api-gateway.js")
@@ -228,7 +228,7 @@ resource "cloudflare_worker_script" "api_gateway" {
   # Service binding to private worker
   service_binding {
     name        = "PRODUCTS_API"
-    service     = cloudflare_worker_script.products_api.name
+    service     = cloudflare_workers_script.products_api.name
     environment = "production"
   }
 
@@ -245,6 +245,30 @@ resource "cloudflare_worker_script" "api_gateway" {
 resource "cloudflare_queue" "orders" {
   account_id = var.account_id
   name       = "demo-order-processing"   # attribute is 'name', not 'queue_name'
+}
+```
+
+### Queue Consumer Registration
+
+```hcl
+resource "null_resource" "queue_consumer" {
+  depends_on = [
+    cloudflare_queue.orders,
+    cloudflare_workers_script.order_processor,
+  ]
+
+  triggers = {
+    queue_name      = cloudflare_queue.orders.name
+    consumer_script = cloudflare_workers_script.order_processor.name
+    script_hash     = filemd5("${path.module}/workers/order-processor.js")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      wrangler queues consumer worker remove ${self.triggers.queue_name} ${self.triggers.consumer_script} >/dev/null 2>&1 || true
+      wrangler queues consumer worker add ${self.triggers.queue_name} ${self.triggers.consumer_script}
+    EOT
+  }
 }
 ```
 
@@ -355,7 +379,7 @@ The binding is either:
 
 Check with:
 ```bash
-terraform state show cloudflare_worker_script.api_gateway | grep -A3 "binding"
+terraform state show cloudflare_workers_script.api_gateway | grep -A3 "binding"
 ```
 
 ### Queue Binding Attribute Names
@@ -377,7 +401,7 @@ terraform state list
 terraform state show data.cloudflare_zone.main
 
 # Check specific worker bindings
-terraform state show cloudflare_worker_script.api_gateway
+terraform state show cloudflare_workers_script.api_gateway
 ```
 
 ### Diagnostics

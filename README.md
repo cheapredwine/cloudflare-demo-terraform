@@ -69,51 +69,72 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 - **Bot Management** - Automated threat detection
 - **Edge Caching** - Sub-second response times
 
-## Quick Start
+## Quick Start (Demo Workflow)
 
-### 1. Prerequisites
-- [Terraform](https://www.terraform.io/) installed
-- [Cloudflare account](https://cloudflare.com) with Enterprise or Pro plan
-- API token with these permissions:
-  - Zone:Edit
-  - DNS:Edit
-  - Zone Settings:Edit
-  - Page Rules:Edit
-  - Workers Scripts:Edit
-  - D1:Edit
-  - R2:Edit
+This repo is designed for demos. Deploy, run demos, tear down.
 
-### 2. Configuration
+### Step 1: Configure
 ```bash
-git clone <this-repo>
-cd cloudflare-demo-terraform
-
-# Copy and edit configuration
 cp terraform.tfvars.example terraform.tfvars
-nano terraform.tfvars
+# Edit with your API token, account ID, and zone
 ```
 
-Update `terraform.tfvars`:
-```hcl
-cloudflare_api_token = "your-api-token"
-account_id          = "your-account-id"
-zone_name           = "your-domain.com"
-```
-
-### 3. Deploy
+### Step 2: Deploy Platform
 ```bash
-terraform init
-terraform plan
-terraform apply
+./run-demo.sh deploy
 ```
 
-### 4. Initialize
-After deployment, visit your admin panel to set up the database:
+Deploy now auto-registers Queue consumer (`demo-order-processor`) and fails fast if consumer is missing.
 
-1. Go to `https://admin.your-domain.com`
-2. Login with: `admin` / `demo123`
-3. Click "Initialize Database"
-4. Click "Load Sample Data"
+After deploy completes, access the admin panel:
+- **URL:** `https://admin.your-domain.com`
+- **Username:** `admin`
+- **Password:** `demo123`
+
+Click "Initialize Database" then "Load Sample Data" to get started.
+
+### Step 3: Run Demos
+
+**Platform demos** (API, admin panel, workers):
+```bash
+./run-demo.sh test          # Verify endpoints + queue consumer health
+./run-demo.sh deploy --demo # Run sample API calls
+```
+
+**Terraform demos** (infrastructure as code concepts):
+```bash
+./terraform-demo.sh state-inspect   # Show state and outputs
+./terraform-demo.sh drift-detect    # Detect manual dashboard changes
+./terraform-demo.sh idempotency     # Apply twice, 0 changes
+./terraform-demo.sh targeted        # Deploy single resource
+./terraform-demo.sh plan-file       # Save and apply exact plan
+./terraform-demo.sh refresh-only    # Detect drift without changing
+./terraform-demo.sh taint-replace   # Force recreation
+./terraform-demo.sh var-override    # Override variables
+./terraform-demo.sh graph           # Dependency graph
+./terraform-demo.sh workspaces      # Multiple environments
+```
+
+Run all Terraform demos:
+```bash
+./terraform-demo.sh all
+```
+
+### Step 4: Teardown
+```bash
+./run-demo.sh destroy
+```
+
+**Total runtime:** ~5-10 minutes for full deploy + demos + destroy.
+
+---
+
+## Prerequisites
+- [Terraform](https://www.terraform.io/) installed
+- [Cloudflare account](https://cloudflare.com) with zone access
+- API token with: Zone:Edit, DNS:Edit, Zone Settings:Edit, Workers Scripts:Edit, D1:Edit, R2:Edit, KV:Edit, Queues:Edit
+
+## Architecture
 
 ## API Endpoints
 

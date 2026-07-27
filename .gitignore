@@ -37,6 +37,8 @@ yarn-error.log*
 /tmp/
 *.tmp
 *.bak
+tfplan
+terraform-graph.png
 
 # Demo artifacts
 /demo-output/
