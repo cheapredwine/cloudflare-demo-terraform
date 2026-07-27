@@ -74,6 +74,9 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 This repo is designed for demos. Deploy, run demos, tear down.
 
 PowerShell equivalents exist for every user-facing shell script (`*.sh` and matching `*.ps1`). Keep both versions updated together.
+Canonical script implementations live under `scripts/`; root script names are compatibility shims.
+
+Terraform is organized by concern across multiple files (`providers.tf`, `dns.tf`, `storage.tf`, `workers.tf`, `routes.tf`, `migrations.tf`, etc.) for readability.
 
 ### Step 1: Configure
 ```bash
@@ -223,7 +226,7 @@ plain_text_binding {
 
 ### Adding New Workers
 1. Create worker file in `workers/`
-2. Add resource in `main.tf`
+2. Add resource in `workers.tf` (and related `*.tf` file if needed)
 3. Configure bindings and routes
 
 ### Scaling & Performance
