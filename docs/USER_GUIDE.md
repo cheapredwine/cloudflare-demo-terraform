@@ -54,7 +54,7 @@ zone_name            = "yourdomain.com"
 ### Deploy
 
 ```bash
-./run-demo.sh deploy
+make deploy
 ```
 
 This runs `terraform init && apply`, waits for DNS, and tests endpoints. The D1 schema is applied automatically via `wrangler d1 execute` during `terraform apply` — no manual database initialization is required.
@@ -67,7 +67,7 @@ After deploy, seed the product catalog:
 
 ```bash
 # Via script
-./run-demo.sh reset
+make reset
 
 # Or via API directly
 curl -X POST https://api.jsherron.com/api/products/seed
@@ -80,30 +80,23 @@ Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample
 ## Demo Scripts
 
 Each script has a PowerShell twin with the same purpose (`.sh` <-> `.ps1`). Keep both in sync when changing behavior.
-Canonical implementations live under `scripts/`; root-level script names are compatibility shims.
+Canonical implementations live under `scripts/`. Preferred daily entrypoints use `make`.
 
 | Script | Purpose |
 |--------|---------|
-| `./run-demo.sh deploy` | Deploy all infrastructure |
-| `./run-demo.ps1 deploy` | PowerShell equivalent of deploy |
-| `./run-demo.sh reset` | Re-seed data, keep infrastructure |
-| `./run-demo.ps1 reset` | PowerShell equivalent of reset |
-| `./run-demo.sh test` | Fast smoke checks for endpoints + queue consumer health |
-| `./run-demo.ps1 test` | PowerShell equivalent of smoke checks |
-| `./run-demo.sh destroy` | Tear down all Terraform-managed resources |
-| `./run-demo.ps1 destroy` | PowerShell equivalent of teardown |
-| `./run-demo.sh fresh` | Destroy + redeploy |
-| `./run-demo.ps1 fresh` | PowerShell equivalent of fresh redeploy |
-| `./run-demo.sh deploy --demo` | Deploy then run a demo API flow |
-| `./run-demo.ps1 deploy --demo` | PowerShell equivalent of demo deploy flow |
-| `./test.sh` | Full integration suite (API, admin, queue, async order persistence) |
-| `./test.ps1` | PowerShell equivalent of full integration suite |
-| `./demo-latency.sh` | Cache HIT vs MISS latency comparison |
-| `./demo-latency.ps1` | PowerShell equivalent of latency comparison |
-| `./demo-analytics.sh` | Generate traffic + print dashboard links |
-| `./demo-analytics.ps1` | PowerShell equivalent of analytics traffic generator |
-| `./terraform-demo.sh all` | Run all Terraform concept demos |
-| `./terraform-demo.ps1 all` | PowerShell equivalent of Terraform concept demos |
+| `make deploy` | Deploy all infrastructure |
+| `make reset` | Re-seed data, keep infrastructure |
+| `make smoke` | Fast smoke checks for endpoints + queue consumer health |
+| `make test` | Full integration suite (API, admin, queue, async order persistence) |
+| `make destroy` | Tear down all Terraform-managed resources |
+| `make fresh` | Destroy + redeploy |
+| `make deploy-demo` | Deploy then run a demo API flow |
+| `make latency` | Cache HIT vs MISS latency comparison |
+| `make analytics` | Generate traffic + print dashboard links |
+| `make tf-all` | Run all Terraform concept demos |
+| `./scripts/lifecycle/run-demo.ps1 deploy` | PowerShell lifecycle equivalent |
+| `./scripts/tests/test.ps1` | PowerShell integration equivalent |
+| `./scripts/demos/terraform-demo.ps1 all` | PowerShell Terraform demo equivalent |
 
 ---
 
@@ -147,13 +140,13 @@ curl https://api.jsherron.com/api/auth/me -H "Authorization: Bearer $SESSION" | 
 
 **4. Cache Demo (3 min)**
 ```bash
-./demo-latency.sh
+make latency
 ```
 Shows average MISS latency (D1 query) vs HIT latency (KV), with speedup ratio.
 
 **5. Analytics (2 min)**
 ```bash
-./demo-analytics.sh
+make analytics
 ```
 Generates ~75 requests across all workers, prints direct links to Workers Analytics dashboard.
 
@@ -167,7 +160,7 @@ Generates ~75 requests across all workers, prints direct links to Workers Analyt
 2. **Service binding** — show `demo-products-api` has no public route; proxied privately
 3. **Queue pattern** — `workers/order-processor.js`: queue consumer, stock decrement
 4. **Terraform** — modular `*.tf` layout (`workers.tf`, `storage.tf`, `routes.tf`, etc.): all infra as code, one apply
-5. **Live deploy** — run `./run-demo.sh deploy` and show output
+5. **Live deploy** — run `make deploy` and show output
 
 ---
 
@@ -176,9 +169,9 @@ Generates ~75 requests across all workers, prints direct links to Workers Analyt
 **"Zero infrastructure management."**
 
 1. Show `terraform plan -destroy` — list of what gets cleaned up
-2. Run `./test.sh` — full integration checks across APIs, admin, and async order flow
+2. Run `make test` — full integration checks across APIs, admin, and async order flow
 3. Open Cloudflare Dashboard → Workers & Pages → show analytics, logs, CPU time
-4. Reset between demos: `./run-demo.sh reset` (seconds, not minutes)
+4. Reset between demos: `make reset` (seconds, not minutes)
 
 ---
 
@@ -317,7 +310,7 @@ terraform plan -destroy
 This removes: D1 database (all data), KV namespaces, R2 bucket, Queue, all 4 Workers, Worker routes, Cache Rules, and DNS records for `api.*`, `admin.*`. The `jsherron.com` zone itself is NOT deleted (it's a data source).
 
 ```bash
-./run-demo.sh destroy
+make destroy
 ```
 
 ---
@@ -334,4 +327,4 @@ The zone (`jsherron.com`) is pre-existing — no zone cost is added by this demo
 | R2 | 10GB storage, 1M ops/month | $0.015/GB |
 | Queues | 1M ops/month | $0.40/million |
 
-A single demo session generates well under free tier limits. Keep the environment running between demos (`./run-demo.sh reset`) rather than destroying and redeploying to minimize apply time.
+A single demo session generates well under free tier limits. Keep the environment running between demos (`make reset`) rather than destroying and redeploying to minimize apply time.
