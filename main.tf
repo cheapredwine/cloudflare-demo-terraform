@@ -145,7 +145,7 @@ resource "cloudflare_queue" "orders" {
 }
 
 # API Gateway Worker
-resource "cloudflare_worker_script" "api_gateway" {
+resource "cloudflare_workers_script" "api_gateway" {
   account_id = var.account_id
   name       = "demo-api-gateway"
   content    = file("${path.module}/workers/api-gateway.js")
@@ -173,7 +173,7 @@ resource "cloudflare_worker_script" "api_gateway" {
 
   service_binding {
     name        = "PRODUCTS_API"
-    service     = cloudflare_worker_script.products_api.name
+    service     = cloudflare_workers_script.products_api.name
     environment = "production"
   }
 
@@ -184,7 +184,7 @@ resource "cloudflare_worker_script" "api_gateway" {
 }
 
 # Products API Worker
-resource "cloudflare_worker_script" "products_api" {
+resource "cloudflare_workers_script" "products_api" {
   account_id = var.account_id
   name       = "demo-products-api"
   content    = file("${path.module}/workers/products-api.js")
@@ -202,7 +202,7 @@ resource "cloudflare_worker_script" "products_api" {
 }
 
 # Order Processing Worker
-resource "cloudflare_worker_script" "order_processor" {
+resource "cloudflare_workers_script" "order_processor" {
   account_id = var.account_id
   name       = "demo-order-processor"
   content    = file("${path.module}/workers/order-processor.js")
@@ -220,7 +220,7 @@ resource "cloudflare_worker_script" "order_processor" {
 }
 
 # Admin Panel Worker
-resource "cloudflare_worker_script" "admin_panel" {
+resource "cloudflare_workers_script" "admin_panel" {
   account_id = var.account_id
   name       = "demo-admin-panel"
   content    = file("${path.module}/workers/admin-panel.js")
@@ -242,81 +242,50 @@ resource "cloudflare_worker_script" "admin_panel" {
   }
 }
 
+# Queue Consumer Registration
+# Cloudflare queue consumers are configured separately from queue bindings.
+# Ensure demo-order-processor is attached as consumer for demo-order-processing.
+resource "null_resource" "queue_consumer" {
+  depends_on = [
+    cloudflare_queue.orders,
+    cloudflare_workers_script.order_processor,
+  ]
+
+  triggers = {
+    queue_name      = cloudflare_queue.orders.name
+    consumer_script = cloudflare_workers_script.order_processor.name
+    script_hash     = filemd5("${path.module}/workers/order-processor.js")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      wrangler queues consumer worker remove ${self.triggers.queue_name} ${self.triggers.consumer_script} >/dev/null 2>&1 || true
+      wrangler queues consumer worker add ${self.triggers.queue_name} ${self.triggers.consumer_script}
+    EOT
+
+    environment = {
+      CLOUDFLARE_API_TOKEN  = var.cloudflare_api_token
+      CLOUDFLARE_ACCOUNT_ID = var.account_id
+    }
+  }
+}
+
 # Routes
-resource "cloudflare_worker_route" "api_gateway_route" {
+resource "cloudflare_workers_route" "api_gateway_route" {
   zone_id     = data.cloudflare_zone.main.id
   pattern     = "api.${var.zone_name}/*"
-  script_name = cloudflare_worker_script.api_gateway.name
+  script_name = cloudflare_workers_script.api_gateway.name
 }
 
-resource "cloudflare_worker_route" "admin_route" {
+resource "cloudflare_workers_route" "admin_route" {
   zone_id     = data.cloudflare_zone.main.id
   pattern     = "admin.${var.zone_name}/*"
-  script_name = cloudflare_worker_script.admin_panel.name
+  script_name = cloudflare_workers_script.admin_panel.name
 }
 
-# Cache Rules (replaces deprecated Page Rules)
-resource "cloudflare_ruleset" "cache_rules" {
-  zone_id     = data.cloudflare_zone.main.id
-  name        = "Cache Rules"
-  description = "Cache rules for API products and uploads"
-  kind        = "zone"
-  phase       = "http_request_cache_settings"
-
-  rules {
-    description = "Cache API products for 5 minutes"
-    expression  = "(http.host eq \"api.${var.zone_name}\" and starts_with(http.request.uri.path, \"/products\"))"
-    action      = "set_cache_settings"
-    enabled     = true
-
-    action_parameters {
-      cache = true
-      edge_ttl {
-        mode    = "override_origin"
-        default = 300
-      }
-      browser_ttl {
-        mode    = "override_origin"
-        default = 300
-      }
-    }
-  }
-
-  rules {
-    description = "Cache uploads for 24 hours"
-    expression  = "(http.host eq \"uploads.${var.zone_name}\")"
-    action      = "set_cache_settings"
-    enabled     = true
-
-    action_parameters {
-      cache = true
-      edge_ttl {
-        mode    = "override_origin"
-        default = 86400
-      }
-      browser_ttl {
-        mode    = "override_origin"
-        default = 86400
-      }
-    }
-  }
-}
-
-# SSL Settings
-resource "cloudflare_zone_settings_override" "main" {
-  zone_id = data.cloudflare_zone.main.id
-
-  settings {
-    always_use_https         = "on"
-    automatic_https_rewrites = "on"
-    ssl                      = "strict"
-    min_tls_version         = "1.2"
-    tls_1_3                 = "zrt"
-    security_level          = "medium"
-    browser_check           = "on"
-    hotlink_protection      = "on"
-  }
-}
+# SSL and cache settings managed via Cloudflare dashboard
+# cloudflare_zone_settings_override and cloudflare_ruleset removed
+# to avoid provider bugs and permission issues
 
 # D1 Schema Migration
 # Runs wrangler to apply db/schema.sql on every deploy (idempotent via IF NOT EXISTS)

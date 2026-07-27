@@ -59,6 +59,8 @@ zone_name            = "yourdomain.com"
 
 This runs `terraform init && apply`, waits for DNS, and tests endpoints. The D1 schema is applied automatically via `wrangler d1 execute` during `terraform apply` — no manual database initialization is required.
 
+Deploy also auto-attaches `demo-order-processor` as consumer for `demo-order-processing`.
+
 ### Initialize Demo Data
 
 After deploy, seed the product catalog:
@@ -81,7 +83,7 @@ Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample
 |--------|---------|
 | `./run-demo.sh deploy` | Deploy all infrastructure |
 | `./run-demo.sh reset` | Re-seed data, keep infrastructure |
-| `./run-demo.sh test` | Basic endpoint health checks |
+| `./run-demo.sh test` | Endpoint health checks + queue consumer check |
 | `./run-demo.sh destroy` | Tear down all Terraform-managed resources |
 | `./run-demo.sh fresh` | Destroy + redeploy |
 | `./run-demo.sh deploy --demo` | Deploy then run a demo API flow |

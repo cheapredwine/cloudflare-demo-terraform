@@ -144,7 +144,7 @@ POST /api/products/seed
 
 ## Orders API
 
-Orders are sent to a Cloudflare Queue for async processing. The queue consumer worker (`demo-order-processor`) writes them to D1 and decrements stock.
+Orders are sent to a Cloudflare Queue for async processing. The queue consumer worker (`demo-order-processor`) writes them to D1 and decrements stock. Terraform auto-registers this consumer during deploy.
 
 ### Create Order
 ```http
@@ -173,7 +173,7 @@ Content-Type: application/json
 }
 ```
 
-The order is processed asynchronously. Check the admin panel to see completed orders.
+The order is processed asynchronously. Check the admin panel to see completed orders. If orders remain queued, run `./run-demo.sh test` to verify queue consumer health.
 
 ---
 

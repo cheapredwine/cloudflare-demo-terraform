@@ -201,6 +201,35 @@ test_endpoints() {
     else
         echo "⚠️  Admin Panel: $ADMIN_URL (HTTP $response)"
     fi
+
+    check_queue_consumer
+}
+
+check_queue_consumer() {
+    echo "Testing Queue consumer..."
+
+    if ! command -v wrangler &> /dev/null; then
+        echo "⚠️  Wrangler not installed; skipping queue consumer check"
+        return
+    fi
+
+    local queue_info
+    if ! queue_info=$(wrangler queues info demo-order-processing 2>/dev/null); then
+        echo "⚠️  Could not query queue info; check Wrangler auth and account access"
+        return
+    fi
+
+    local consumer_count
+    consumer_count=$(printf '%s\n' "$queue_info" | grep "Number of Consumers:" | awk '{print $4}')
+
+    if [ -n "$consumer_count" ] && [ "$consumer_count" -ge 1 ]; then
+        echo "✅ Queue consumer attached (consumers: $consumer_count)"
+    else
+        echo "❌ Queue consumer missing: demo-order-processing has no consumers"
+        echo "   Orders will stay queued and not show in admin"
+        echo "   Fix: wrangler queues consumer worker add demo-order-processing demo-order-processor"
+        exit 1
+    fi
 }
 
 show_success_message() {

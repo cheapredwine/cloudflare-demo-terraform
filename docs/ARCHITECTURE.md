@@ -165,7 +165,7 @@ Client → admin.jsherron.com/*
 Products API uses a cache-aside pattern: check KV first, on miss query D1 and populate KV. Any mutation (create/update/delete/seed) deletes the cache key, ensuring consistency.
 
 ### Queue-based Decoupling
-Orders are accepted synchronously and queued immediately. The gateway returns a response to the client without waiting for D1 writes or stock updates. The order processor worker handles the heavy work asynchronously.
+Orders are accepted synchronously and queued immediately. The gateway returns a response to the client without waiting for D1 writes or stock updates. The order processor worker handles the heavy work asynchronously. Terraform applies a queue consumer registration step so `demo-order-processor` stays attached to `demo-order-processing`.
 
 ### Zone as Data Source
 `jsherron.com` is a pre-existing zone referenced via Terraform `data` source, not created by Terraform. Running `terraform destroy` will not delete the zone.
