@@ -13,7 +13,7 @@ show_help() {
 Terraform Demo Script
 =====================
 
-Usage: ./terraform-demo.sh [ACTION]
+Usage: ./terraform-demo.sh [ACTION] [OPTIONS]
 
 Actions:
   idempotency     Show declarative idempotency (apply twice, 0 changes second time)
@@ -24,7 +24,7 @@ Actions:
   workspaces      Create staging workspace and switch between them
   refresh-only    Detect drift without making changes
   taint-replace   Force recreation of a single resource
-  var-override    Apply with overridden zone_name variable
+  var-override    Plan with overridden zone_name (requires existing zone)
   graph           Generate visual dependency graph
   all             Run all demos sequentially
   help            Show this help
@@ -33,6 +33,7 @@ Examples:
   ./terraform-demo.sh idempotency
   ./terraform-demo.sh drift-detect
   ./terraform-demo.sh all
+  ./terraform-demo.sh var-override staging.example.com
 
 EOF
 }
@@ -275,8 +276,16 @@ demo_var_override() {
     echo ""
     press_enter
 
+    local override_zone="${2:-}"
+    if [ -z "$override_zone" ]; then
+        echo "Usage: ./terraform-demo.sh var-override <existing-zone>"
+        echo "Example: ./terraform-demo.sh var-override staging.example.com"
+        echo "Provide a zone that exists in your Cloudflare account."
+        return
+    fi
+
     echo "Plan with a different zone (dry run, won't apply):"
-    run_cmd "terraform plan -var=\"zone_name=demo2.jsherron.com\""
+    run_cmd "terraform plan -var=\"zone_name=$override_zone\""
     press_enter
 
     echo "Notice: plan uses the overridden zone name."
@@ -371,7 +380,7 @@ case "$ACTION" in
         ;;
     var-override)
         check_prereqs
-        demo_var_override
+        demo_var_override "$2"
         ;;
     graph)
         check_prereqs
