@@ -1,0 +1,19 @@
+terraform-demo.sh
+  s_b827a1bef6b8fb::t_3196409e8fb0cb 1-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a1ec7617bcf4a7a92f60356c4f4bded35d37431a",
+  "prompts": {},
+  "sessions": {
+    "s_b827a1bef6b8fb": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_05b8bb8a4ffexP7EabPI7YqQUX",
+        "model": "@cf/moonshotai/kimi-k2.6"
+      },
+      "human_author": "Jason Sherron <jsherron@cloudflare.com>"
+    }
+  }
+}
