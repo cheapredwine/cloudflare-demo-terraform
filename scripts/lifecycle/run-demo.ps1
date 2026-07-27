@@ -99,10 +99,19 @@ function Parse-JsonOrRaw {
     }
 }
 
+function Get-HttpStatusCode {
+    param([string]$Uri)
+    try {
+        return (Invoke-Http -Uri $Uri).StatusCode
+    } catch {
+        return 0
+    }
+}
+
 function Test-EndpointsSilent {
     $apiUrl = "https://api.$script:ZoneName/api/products"
-    $response = Invoke-Http -Uri $apiUrl
-    return ($response.StatusCode -eq 200)
+    $status = Get-HttpStatusCode -Uri $apiUrl
+    return ($status -eq 200)
 }
 
 function Check-QueueConsumer {
@@ -134,7 +143,7 @@ function Test-Endpoints {
 
     Write-Host "Testing API Gateway..."
     $apiUrl = "https://api.$script:ZoneName/api/products"
-    $apiStatus = (Invoke-Http -Uri $apiUrl).StatusCode
+    $apiStatus = Get-HttpStatusCode -Uri $apiUrl
     if ($apiStatus -eq 200) {
         Write-Host "✅ API Gateway: $apiUrl"
     } else {
@@ -143,7 +152,7 @@ function Test-Endpoints {
 
     Write-Host "Testing Admin Panel..."
     $adminUrl = "https://admin.$script:ZoneName"
-    $adminStatus = (Invoke-Http -Uri $adminUrl).StatusCode
+    $adminStatus = Get-HttpStatusCode -Uri $adminUrl
     if ($adminStatus -eq 401) {
         Write-Host "✅ Admin Panel: $adminUrl (Auth required)"
     } else {

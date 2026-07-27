@@ -198,10 +198,20 @@ fresh_deploy() {
     deploy_infrastructure
 }
 
+get_http_code() {
+    local url="$1"
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || true)
+    if [ -z "$code" ]; then
+        code="000"
+    fi
+    printf '%s' "$code"
+}
+
 test_endpoints_silent() {
     # Use /api/products — bare URL returns 404, which is correct worker behaviour
     API_URL="https://api.$ZONE_NAME/api/products"
-    response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_URL" 2>/dev/null)
+    response=$(get_http_code "$API_URL")
     [ "$response" -eq 200 ]
 }
 
@@ -211,7 +221,7 @@ test_endpoints() {
     # Test API Gateway
     echo "Testing API Gateway..."
     API_URL="https://api.$ZONE_NAME/api/products"
-    response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_URL" 2>/dev/null)
+    response=$(get_http_code "$API_URL")
     if [ "$response" -eq 200 ]; then
         echo "✅ API Gateway: $API_URL"
     else
@@ -221,7 +231,7 @@ test_endpoints() {
     # Test Admin Panel
     echo "Testing Admin Panel..."
     ADMIN_URL="https://admin.$ZONE_NAME"
-    response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$ADMIN_URL" 2>/dev/null)
+    response=$(get_http_code "$ADMIN_URL")
     if [ "$response" -eq 401 ]; then
         echo "✅ Admin Panel: $ADMIN_URL (Auth required)"
     else
