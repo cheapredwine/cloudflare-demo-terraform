@@ -1,0 +1,37 @@
+demo-analytics.sh
+  s_7866375ace19c7::t_a2960a0391c889 2,4-5
+demo-latency.sh
+  s_7866375ace19c7::t_fa7fa3ffc0da14 2,4-5
+run-demo.sh
+  s_7866375ace19c7::t_1b4c6e845aa0d7 4-5
+scripts/demos/demo-analytics.sh
+  s_7866375ace19c7::t_0a6c79b4b3f8b8 1-118
+scripts/demos/demo-latency.sh
+  s_7866375ace19c7::t_6fad1754d6e6cf 1-91
+scripts/demos/terraform-demo.sh
+  s_7866375ace19c7::t_676e37bfaf7c7a 1-395
+scripts/lifecycle/run-demo.sh
+  s_7866375ace19c7::t_c2b4e86a5f613e 1-378
+scripts/tests/test.sh
+  s_7866375ace19c7::t_f989326c4a9bec 1-341
+terraform-demo.sh
+  s_7866375ace19c7::t_0c810eb067c74b 4-5
+test.sh
+  s_7866375ace19c7::t_748b4b446b820a 2,4-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ba135413b52e5f9e5d118adb457c5ba47d5e9d41",
+  "prompts": {},
+  "sessions": {
+    "s_7866375ace19c7": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_05acc1cb1ffe010wPKJD4GsjIU",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Jason Sherron <jsherron@cloudflare.com>"
+    }
+  }
+}
