@@ -79,17 +79,30 @@ Or use the admin panel: visit https://admin.jsherron.com → click **Load Sample
 
 ## Demo Scripts
 
+Each script has a PowerShell twin with the same purpose (`.sh` <-> `.ps1`). Keep both in sync when changing behavior.
+
 | Script | Purpose |
 |--------|---------|
 | `./run-demo.sh deploy` | Deploy all infrastructure |
+| `./run-demo.ps1 deploy` | PowerShell equivalent of deploy |
 | `./run-demo.sh reset` | Re-seed data, keep infrastructure |
+| `./run-demo.ps1 reset` | PowerShell equivalent of reset |
 | `./run-demo.sh test` | Fast smoke checks for endpoints + queue consumer health |
+| `./run-demo.ps1 test` | PowerShell equivalent of smoke checks |
 | `./run-demo.sh destroy` | Tear down all Terraform-managed resources |
+| `./run-demo.ps1 destroy` | PowerShell equivalent of teardown |
 | `./run-demo.sh fresh` | Destroy + redeploy |
+| `./run-demo.ps1 fresh` | PowerShell equivalent of fresh redeploy |
 | `./run-demo.sh deploy --demo` | Deploy then run a demo API flow |
+| `./run-demo.ps1 deploy --demo` | PowerShell equivalent of demo deploy flow |
 | `./test.sh` | Full integration suite (API, admin, queue, async order persistence) |
+| `./test.ps1` | PowerShell equivalent of full integration suite |
 | `./demo-latency.sh` | Cache HIT vs MISS latency comparison |
+| `./demo-latency.ps1` | PowerShell equivalent of latency comparison |
 | `./demo-analytics.sh` | Generate traffic + print dashboard links |
+| `./demo-analytics.ps1` | PowerShell equivalent of analytics traffic generator |
+| `./terraform-demo.sh all` | Run all Terraform concept demos |
+| `./terraform-demo.ps1 all` | PowerShell equivalent of Terraform concept demos |
 
 ---
 
