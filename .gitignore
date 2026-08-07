@@ -43,3 +43,10 @@ terraform-graph.png
 # Demo artifacts
 /demo-output/
 /test-files/
+
+# Security / build artifacts
+node_modules/
+dist/
+.env
+*.pem
+.dev.vars
