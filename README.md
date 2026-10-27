@@ -1,5 +1,10 @@
 # Cloudflare Demo Platform
 
+> ⚠️ **NOT OFFICIAL CLOUDFLARE.** Not affiliated with or endorsed by Cloudflare, Inc.
+> NO WARRANTIES, EXPRESS OR IMPLIED. Effectively untested demo code — read everything
+> and dry-run before you run. You assume all risk. See [DISCLAIMER.md](./DISCLAIMER.md).
+
+
 A complete e-commerce platform demo built with Cloudflare's edge computing stack. This Terraform configuration creates a production-ready setup showcasing:
 
 - **Multi-Zone Architecture** with API gateway pattern
