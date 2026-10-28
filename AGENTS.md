@@ -213,7 +213,7 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 ## Next Session Notes
 
 - All deprecated resources fixed, no warnings
-- Zone: jsherron.com (ID: [removed])
-- Account: [removed]
+- Zone: jsherron.com 
+- Account: (test account)
 - Terraform provider v4.52.8
 - Run `make deploy` to deploy infrastructure
