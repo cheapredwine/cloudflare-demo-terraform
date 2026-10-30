@@ -32,40 +32,54 @@ After deploy, visit admin panel → click "Load Sample Data".
 ## File Layout
 
 ```
-providers.tf             # Terraform + provider config
+providers.tf             # Terraform + provider config (Cloudflare provider v5)
 variables.tf             # Input variables
-zone.tf                  # Existing zone data source
-dns.tf                   # DNS records
+zone.tf                  # Existing zone data source (v5 filter shape)
+dns.tf                   # DNS records (cloudflare_dns_record + moved blocks)
 storage.tf               # D1, KV, R2, Queue resources
-workers.tf               # Worker scripts + bindings
+workers.tf               # cloudflare_worker + cloudflare_worker_version (v5 pattern)
 routes.tf                # Worker routes
-queue-consumer.tf        # Queue consumer attach/detach automation
-migrations.tf            # D1 schema + R2 cleanup null_resources
+queue-consumer.tf        # cloudflare_queue_consumer (first-class v5 resource)
+migrations.tf            # terraform_data: D1 schema apply + R2 destroy-time cleanup
+ai-gateway.tf            # AI Gateway resource
+waf.tf                   # Managed WAF, custom WAF, rate limiting, redirects rulesets
+cdn.tf                   # Cache rules + zone settings (cache_level, min_tls_version)
+load_balancer.tf         # Health monitor, origin pool, zone load balancer
 outputs.tf               # Terraform outputs
+tests/main.tftest.hcl    # 16 mocked terraform test cases (make verify)
+scripts/empty-r2.py      # R2 destroy-time bucket emptying (token via env only)
 workers/
   api-gateway.js         # Request routing, CORS, service bindings to products_api
-  products-api.js        # CRUD, KV cache, seed endpoint
+  products-api.js        # CRUD, KV cache, seed endpoint, /products/summary (AI)
   order-processor.js     # Queue batch handler, D1 writes, stock management
   admin-panel.js         # HTML dashboard, basic auth (admin/demo123)
 db/schema.sql            # D1 schema (products, orders, order_items)
 scripts/lifecycle/       # Lifecycle scripts (run-demo.sh/ps1)
 scripts/tests/           # Integration scripts (test.sh/ps1)
 scripts/demos/           # Demo scripts (terraform-demo, latency, analytics)
-Makefile                 # Primary entrypoints (make deploy/test/destroy/etc.)
+Makefile                 # Primary entrypoints (make deploy/test/verify/destroy/etc.)
 terraform.tfvars         # Account credentials (gitignored)
 ```
 
 ## Key Decisions
 
-1. **Deprecated resources fixed** - Replaced `cloudflare_worker_script` with `cloudflare_workers_script` and `cloudflare_worker_route` with `cloudflare_workers_route` to eliminate deprecation warnings.
+1. **Provider v5 (OpenAPI-generated)** - Migrated from v4.52 to v5.28. Notable v5 shapes: `cloudflare_record` → `cloudflare_dns_record`; Workers use `cloudflare_worker` + `cloudflare_worker_version` (deploy=true sends 100% of traffic); `cloudflare_queue` uses `queue_name`; nested objects are attributes (`= {}` / `= []`), not blocks; zone data source uses `filter`; AI Gateway's name is its `id`.
 
-2. **Service binding pattern** - API Gateway uses `env.PRODUCTS_API.fetch()` to call products worker internally. Rewrites `/api/products` → `/products` before proxying. Strips host header to avoid errors.
+2. **State continuity** - `moved` blocks in dns.tf and routes.tf map v4 state (cloudflare_record.*, cloudflare_workers_script.*) to the v5 resources. First apply after upgrade must show those as renames, not destroys.
 
-3. **Cache invalidation** - Products API clears `products:all` KV key on any write (create/update/delete/seed). First GET after write shows `X-Products-Cache: MISS`, subsequent show `HIT`.
+3. **Service binding pattern** - API Gateway uses `env.PRODUCTS_API.fetch()` to call products worker internally. Rewrites `/api/products` → `/products` before proxying. Strips host header to avoid errors.
 
-4. **R2 bucket cleanup** - `null_resource.empty_r2_on_destroy` runs Python script to delete all objects before bucket destruction. Cloudflare refuses to delete non-empty R2 buckets.
+4. **Cache invalidation** - Products API clears `products:all` KV key on any write (create/update/delete/seed). First GET after write shows `X-Products-Cache: MISS`, subsequent show `HIT`.
 
-5. **D1 schema migration** - `null_resource.d1_schema` runs `wrangler d1 execute` with `IF NOT EXISTS` so it's idempotent. Triggers on schema file hash change.
+5. **R2 cleanup at destroy** - `terraform_data.r2_cleanup` destroy-time provisioner runs `scripts/empty-r2.py` (the API refuses to delete non-empty buckets; v5 has no force-destroy). Terraform forbids non-self references in destroy provisioners, so the token comes from the calling shell's `CLOUDFLARE_API_TOKEN` (run-demo.sh exports it from terraform.tfvars). Never stored in state/triggers.
+
+6. **D1 schema migration** - `terraform_data.d1_schema` runs `wrangler d1 execute` with `IF NOT EXISTS` (idempotent), triggering on schema file hash change. Token passed via provisioner environment only.
+
+7. **Queue consumer** - First-class `cloudflare_queue_consumer` resource replaces the old wrangler-based null_resource.
+
+8. **AI Gateway wiring** - `cloudflare_ai_gateway` (id = "demo-ai-gateway") with cache TTL/retries/logging; products-api has a `type = "ai"` Workers AI binding plus `AI_GATEWAY_ID` plain-text binding, and `/api/products/summary` calls `env.AI.run(..., { gateway: { id } })`.
+
+9. **Zone settings** - v5's one-resource-per-setting `cloudflare_zone_setting` replaces the removed v4 `cloudflare_zone_settings_override` (cache_level=aggressive, min_tls_version=1.2).
 
 ## API Endpoints
 
@@ -190,21 +204,20 @@ zone_name           = "domain.com"
 Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_name` in tfvars.
 
 **Token permissions needed:**
-- Zone:Edit, DNS:Edit, Zone Settings:Edit
-- Workers Scripts:Edit, Workers Routes:Edit
-- Account → R2:Edit
-- Account → Workers KV:Edit
-- Account → D1:Edit
-- Account → Queues:Edit
+- Zone:Edit, DNS:Edit, Zone Settings:Edit, Zone WAF:Edit, Load Balancing:Edit (zone), Workers Routes:Edit
+- Workers Scripts:Edit
+- Account → R2:Edit, Workers KV:Edit, D1:Edit, Queues:Edit, AI:Edit (AI Gateway), Load Balancing:Edit (account: monitors/pools)
 
-*Note: Account-level permissions (R2, KV, D1, Queues) must be under "Account resources", not "Zone resources".*
+*Note: Account-level permissions (R2, KV, D1, Queues, AI, LB pools/monitors) must be under "Account resources", not "Zone resources".*
 
 ## Common Issues
 
-- **R2 destroy fails** - Bucket not empty. The `null_resource.empty_r2_on_destroy` handles this automatically.
+- **R2 destroy fails** - Bucket not empty. The `terraform_data.r2_cleanup` destroy provisioner handles it, but needs `CLOUDFLARE_API_TOKEN` in the calling shell (`make destroy` / run-demo.sh handle this).
 - **Worker routes 404** - Ensure DNS records exist and are proxied (orange cloud).
 - **D1 schema not applied** - Requires `wrangler` CLI installed and authenticated.
 - **Cache shows MISS always** - Check that KV namespace is bound correctly.
+- **v5 apply shows destroys for DNS/Workers** - The `moved` blocks should prevent this; if you see destroys instead of renames, re-check `moved` block source addresses against your state (`terraform state list`).
+- **AI summary returns 503** - Workers AI not enabled on the account, or the account lacks AI:Edit on the token.
 
 ## Cost
 
@@ -212,8 +225,10 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 
 ## Next Session Notes
 
-- All deprecated resources fixed, no warnings
-- Zone: jsherron.com 
+- Migrated to Cloudflare provider v5 (v5.28.1), Terraform CLI 1.17
+- `make verify` = fmt + validate + 16 mocked terraform tests (offline)
+- New: managed/custom/rate-limit WAF, cache rules + zone settings, load balancer, AI Gateway + Workers AI summary endpoint
+- First real `terraform apply` must show the moved blocks as renames (DNS records + 4 workers); verify with `terraform plan` before applying
+- Zone: jsherron.com
 - Account: (test account)
-- Terraform provider v4.52.8
 - Run `make deploy` to deploy infrastructure

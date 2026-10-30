@@ -29,10 +29,14 @@ Admin credentials: `admin` / `demo123`
 | Account > Workers R2 Storage | Edit |
 | Account > D1 | Edit |
 | Account > Queues | Edit |
+| Account > AI (AI Gateway) | Edit |
+| Account > Load Balancing (monitors/pools) | Edit |
 | Zone > Zone Settings | Edit |
 | Zone > DNS | Edit |
 | Zone > Workers Routes | Edit |
 | Zone > Cache Rules | Edit |
+| Zone > Zone WAF (custom rules, managed ruleset, rate limiting) | Edit |
+| Zone > Load Balancing | Edit |
 
 ### Setup
 
@@ -85,6 +89,7 @@ Canonical implementations live under `scripts/`. Preferred daily entrypoints use
 | Script | Purpose |
 |--------|---------|
 | `make deploy` | Deploy all infrastructure |
+| `make verify` | Offline config verification: fmt + validate + 16 mocked terraform tests |
 | `make reset` | Re-seed data, keep infrastructure |
 | `make smoke` | Fast smoke checks for endpoints + queue consumer health |
 | `make test` | Full integration suite (API, admin, queue, async order persistence) |
@@ -201,6 +206,9 @@ curl -X DELETE https://api.jsherron.com/api/products/1
 
 # Seed 5 sample products
 curl -X POST https://api.jsherron.com/api/products/seed
+
+# AI catalog summary (Workers AI through the AI Gateway)
+curl https://api.jsherron.com/api/products/summary
 ```
 
 ### Orders

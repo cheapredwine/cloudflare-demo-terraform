@@ -1,36 +1,14 @@
-resource "null_resource" "queue_consumer" {
-  depends_on = [
-    cloudflare_queue.orders,
-    cloudflare_workers_script.order_processor,
-  ]
+# Queue consumer (provider v5: first-class resource, replaces the
+# null_resource + wrangler local-exec workaround used on v4)
 
-  triggers = {
-    queue_name      = cloudflare_queue.orders.name
-    consumer_script = cloudflare_workers_script.order_processor.name
-    script_hash     = filemd5("${path.module}/workers/order-processor.js")
-    account_id      = var.account_id
-    api_token       = var.cloudflare_api_token
-  }
+resource "cloudflare_queue_consumer" "orders" {
+  account_id  = var.account_id
+  queue_id    = cloudflare_queue.orders.queue_id
+  script_name = cloudflare_worker.workers["order_processor"].name
+  type        = "worker"
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      wrangler queues consumer worker remove ${self.triggers.queue_name} ${self.triggers.consumer_script} >/dev/null 2>&1 || true
-      wrangler queues consumer worker add ${self.triggers.queue_name} ${self.triggers.consumer_script}
-    EOT
-
-    environment = {
-      CLOUDFLARE_API_TOKEN  = lookup(self.triggers, "api_token", "")
-      CLOUDFLARE_ACCOUNT_ID = lookup(self.triggers, "account_id", "")
-    }
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "wrangler queues consumer worker remove ${self.triggers.queue_name} ${self.triggers.consumer_script} >/dev/null 2>&1 || true"
-
-    environment = {
-      CLOUDFLARE_API_TOKEN  = lookup(self.triggers, "api_token", "")
-      CLOUDFLARE_ACCOUNT_ID = lookup(self.triggers, "account_id", "")
-    }
+  settings = {
+    batch_size  = 10
+    max_retries = 3
   }
 }

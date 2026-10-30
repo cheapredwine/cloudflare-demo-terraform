@@ -35,6 +35,8 @@ export default {
         return await deleteProduct(id, env, corsHeaders);
       } else if (path === '/products/seed' && method === 'POST') {
         return await seedProducts(env, corsHeaders);
+      } else if (path === '/products/summary' && method === 'GET') {
+        return await summarizeCatalog(env, corsHeaders);
       }
 
       return new Response(JSON.stringify({ error: 'Not found' }), {
@@ -318,6 +320,58 @@ async function seedProducts(env, corsHeaders) {
   return new Response(JSON.stringify({
     message: `Seeded ${created} products`,
     timestamp: now
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
+
+/**
+ * AI catalog summary — Workers AI call routed through the AI Gateway.
+ * The gateway (id passed via the AI_GATEWAY_ID binding) applies caching,
+ * retries and request logging to every model invocation.
+ */
+async function summarizeCatalog(env, corsHeaders) {
+  if (!env.AI) {
+    return new Response(JSON.stringify({ error: 'AI binding not available' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Reuse the cached product list as context for the summary
+  let cached = await env.CACHE.get('products:all');
+  if (!cached) {
+    const result = await env.DB.prepare('SELECT id, name, price, category FROM products ORDER BY name').all();
+    cached = JSON.stringify({ products: result.results || [] });
+  }
+
+  const catalog = JSON.parse(cached).products || [];
+  if (catalog.length === 0) {
+    return new Response(JSON.stringify({ error: 'No products to summarize — seed first' }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const catalogText = catalog
+    .map(p => `- ${p.name} ($${p.price}, ${p.category})`)
+    .join('\n');
+
+  const response = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+    prompt: `Write a 2-sentence friendly summary of this store catalog:\n${catalogText}`,
+    max_tokens: 120
+  }, {
+    gateway: {
+      id: env.AI_GATEWAY_ID
+    }
+  });
+
+  return new Response(JSON.stringify({
+    summary: response.response || '',
+    model: '@cf/meta/llama-3.1-8b-instruct',
+    ai_gateway: env.AI_GATEWAY_ID,
+    product_count: catalog.length,
+    timestamp: new Date().toISOString()
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });

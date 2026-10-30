@@ -1,4 +1,4 @@
-.PHONY: help deploy deploy-demo reset destroy fresh smoke test latency analytics tf-all tf-state tf-drift
+.PHONY: help deploy deploy-demo reset destroy fresh smoke test verify fmt validate tftest latency analytics tf-all tf-state tf-drift
 
 help:
 	@printf "Cloudflare Demo Platform\n\n"
@@ -9,8 +9,12 @@ help:
 	@printf "  make destroy       Tear down infra\n"
 	@printf "  make fresh         Destroy + redeploy\n\n"
 	@printf "Validation:\n"
+	@printf "  make verify        fmt check + validate + terraform test (no credentials needed)\n"
+	@printf "  make fmt           terraform fmt -recursive -check\n"
+	@printf "  make validate      terraform validate\n"
+	@printf "  make tftest        terraform test (mocked, offline)\n"
 	@printf "  make smoke         Fast endpoint + queue consumer checks\n"
-	@printf "  make test          Full integration suite\n\n"
+	@printf "  make test          Full integration suite (requires deployed platform)\n\n"
 	@printf "Demos:\n"
 	@printf "  make latency       Cache HIT vs MISS latency demo\n"
 	@printf "  make analytics     Workers analytics traffic demo\n"
@@ -35,6 +39,17 @@ fresh:
 
 smoke:
 	./scripts/lifecycle/run-demo.sh test
+
+verify: fmt validate tftest
+
+fmt:
+	terraform fmt -recursive -check
+
+validate:
+	terraform validate
+
+tftest:
+	terraform test
 
 test:
 	./scripts/tests/test.sh

@@ -50,3 +50,4 @@ dist/
 .env
 *.pem
 .dev.vars
+__pycache__/

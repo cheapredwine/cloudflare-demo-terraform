@@ -20,5 +20,6 @@ resource "cloudflare_d1_database" "products" {
 
 resource "cloudflare_queue" "orders" {
   account_id = var.account_id
-  name       = "demo-order-processing"
+  # In v5 the queue's name is `queue_name`
+  queue_name = "demo-order-processing"
 }

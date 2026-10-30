@@ -1,58 +1,47 @@
-resource "null_resource" "empty_r2_on_destroy" {
-  depends_on = [cloudflare_r2_bucket.uploads]
+# D1 schema application (terraform_data replaces null_resource)
+#
+# The Cloudflare API has no first-class D1 schema resource, so the schema
+# file is applied with `wrangler d1 execute --remote` (idempotent via
+# IF NOT EXISTS). The API token is passed only through the provisioner
+# environment (not stored in triggers/state).
+#
+# R2 cleanup: the Cloudflare API refuses to delete non-empty R2 buckets and
+# provider v5 has no force-destroy, so a destroy-time provisioner empties the
+# bucket first. Terraform forbids non-self references in destroy provisioners,
+# so the API token must be available in the calling shell's
+# CLOUDFLARE_API_TOKEN env var (run-demo.sh sets it when it can).
 
-  triggers = {
-    account_id  = var.account_id
-    bucket_name = cloudflare_r2_bucket.uploads.name
-    api_token   = var.cloudflare_api_token
-  }
+resource "terraform_data" "d1_schema" {
+  depends_on = [cloudflare_d1_database.products, cloudflare_queue_consumer.orders]
 
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      python3 -c "
-import urllib.request, urllib.error, json, sys
-
-account_id  = '${self.triggers.account_id}'
-bucket_name = '${self.triggers.bucket_name}'
-token       = '${self.triggers.api_token}'
-base        = f'https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket_name}'
-headers     = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-
-def api(method, path='', body=None):
-    req = urllib.request.Request(base + path, method=method,
-          data=json.dumps(body).encode() if body else None, headers=headers)
-    try:
-        return json.loads(urllib.request.urlopen(req).read())
-    except urllib.error.HTTPError as e:
-        return json.loads(e.read())
-
-resp = api('GET', '/objects')
-objects = resp.get('result', []) if isinstance(resp.get('result'), list) else []
-print(f'Emptying R2 bucket: {bucket_name} ({len(objects)} objects)')
-for obj in objects:
-    key = obj['key']
-    api('DELETE', f'/objects/{urllib.request.quote(key, safe=\"\")}')
-    print(f'  deleted: {key}')
-print('Done.')
-"
-    EOT
-  }
-}
-
-resource "null_resource" "d1_schema" {
-  depends_on = [cloudflare_d1_database.products]
-
-  triggers = {
-    schema_hash = filemd5("${path.module}/db/schema.sql")
-    database_id = cloudflare_d1_database.products.id
-  }
+  triggers_replace = [
+    filemd5("${path.module}/db/schema.sql"),
+    cloudflare_d1_database.products.id,
+  ]
 
   provisioner "local-exec" {
     command = "wrangler d1 execute demo-products --file=${path.module}/db/schema.sql --remote"
     environment = {
       CLOUDFLARE_API_TOKEN  = var.cloudflare_api_token
       CLOUDFLARE_ACCOUNT_ID = var.account_id
+    }
+  }
+}
+
+resource "terraform_data" "r2_cleanup" {
+  depends_on = [cloudflare_r2_bucket.uploads]
+
+  triggers_replace = [
+    var.account_id,
+    cloudflare_r2_bucket.uploads.name,
+  ]
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "python3 ${path.module}/scripts/empty-r2.py"
+    environment = {
+      CF_ACCOUNT_ID = self.triggers_replace[0]
+      CF_BUCKET     = self.triggers_replace[1]
     }
   }
 }

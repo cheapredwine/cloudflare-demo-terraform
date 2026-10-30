@@ -10,8 +10,12 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 - **Multi-Zone Architecture** with API gateway pattern
 - **Edge Computing** with Workers for all business logic
 - **Distributed Storage** using D1, KV, R2, and Queues
-- **Security & Performance** with WAF rules and caching
+- **Security & Performance** with WAF, rate limiting, and cache rules
+- **Load Balancing** with health monitors and failover
+- **AI Gateway** with a Workers AI catalog summary endpoint
 - **Real-time Features** and async processing
+
+Built on the **Cloudflare Terraform provider v5** (OpenAPI-generated, full API coverage) using the modern `cloudflare_worker` + `cloudflare_worker_version` pattern.
 
 ## Architecture
 
@@ -69,10 +73,19 @@ A complete e-commerce platform demo built with Cloudflare's edge computing stack
 - **Queues** - Async order processing workflow
 
 ### 🔒 Security & Performance
-- **WAF Protection** - SQL injection blocking
-- **Rate Limiting** - API endpoint protection
-- **Bot Management** - Automated threat detection
-- **Edge Caching** - Sub-second response times
+- **Managed WAF** - Cloudflare Managed Ruleset
+- **Custom WAF Rules** - path scanner blocking, challenges, IP allowlisting
+- **Rate Limiting** - per-IP limits on `/api/*`
+- **Edge Caching** - cache rules + aggressive cache level, sub-second response times
+
+### ⚖️ Load Balancing
+- **Health Monitor** - HTTP probes against `/health`
+- **Origin Pool** - failover-ready pool with minimum origins
+- **Zone Load Balancer** - `app.<zone>` with steering policy
+
+### 🤖 AI Gateway
+- **AI Gateway** (`demo-ai-gateway`) - caching (1h TTL), retries, request logging
+- **Workers AI** - `GET /api/products/summary` generates an LLM catalog summary through the gateway (key-free, Workers AI credits)
 
 ## Quick Start (Demo Workflow)
 
@@ -89,7 +102,12 @@ cp terraform.tfvars.example terraform.tfvars
 # Edit with your API token, account ID, and zone
 ```
 
-### Step 2: Deploy Platform
+### Step 2: Verify Config (offline)
+```bash
+make verify   # fmt check + validate + terraform test (mocked, no credentials)
+```
+
+### Step 3: Deploy Platform
 ```bash
 make deploy
 ```
@@ -103,7 +121,7 @@ After deploy completes, access the admin panel:
 
 Click "Load Sample Data" to get started.
 
-### Step 3: Run Demos
+### Step 4: Run Demos
 
 **Platform demos** (API, admin panel, workers):
 ```bash
@@ -144,19 +162,26 @@ Run all Terraform demos:
 make tf-all
 ```
 
-### Step 4: Teardown
+### Step 5: Teardown
 ```bash
 make destroy
 ```
+
+> The R2 bucket is emptied automatically at destroy time; `make destroy` exports
+> `CLOUDFLARE_API_TOKEN` from `terraform.tfvars` for the cleanup step. Running
+> raw `terraform destroy` requires that env var to be set yourself.
 
 **Total runtime:** ~5-10 minutes for full deploy + demos + destroy.
 
 ---
 
 ## Prerequisites
-- [Terraform](https://www.terraform.io/) installed
+- [Terraform](https://www.terraform.io/) >= 1.9 (tested with 1.17)
 - [Cloudflare account](https://cloudflare.com) with zone access
-- API token with: Zone:Edit, DNS:Edit, Zone Settings:Edit, Workers Scripts:Edit, D1:Edit, R2:Edit, KV:Edit, Queues:Edit
+- API token with: Zone:Edit, DNS:Edit, Zone Settings:Edit, Zone WAF:Edit, Workers Scripts:Edit, Workers Routes:Edit, Load Balancers:Edit (zone + account), Account AI:Edit, D1:Edit, R2:Edit, KV:Edit, Queues:Edit
+
+> Note: Account-level permissions (R2, KV, D1, Queues, AI Gateway) must be under
+> "Account resources", not "Zone resources".
 
 ## Architecture
 
@@ -176,6 +201,9 @@ curl -X POST https://api.your-domain.com/api/products \
 
 # Get specific product
 curl https://api.your-domain.com/api/products/1
+
+# AI catalog summary (Workers AI via AI Gateway)
+curl https://api.your-domain.com/api/products/summary
 ```
 
 ### Orders API
@@ -212,7 +240,9 @@ curl -X POST https://api.your-domain.com/api/upload \
 ## Customization
 
 ### Environment Variables
-Workers support environment variables through `terraform.tfvars`:
+Workers support bindings defined in `workers.tf` (v5 `cloudflare_worker_version`
+`bindings` attribute). Add a binding to the `workers` local and, for secrets,
+use `type = "secret_text"` with a sensitive variable:
 
 ```hcl
 # Add to variables.tf
@@ -221,18 +251,25 @@ variable "stripe_secret_key" {
   type        = string
   sensitive   = true
 }
+```
 
-# Add to worker bindings
-plain_text_binding {
-  name  = "STRIPE_SECRET_KEY"
-  text  = var.stripe_secret_key
-}
+```hcl
+# Add to the worker's bindings list in workers.tf
+{ type = "secret_text", name = "STRIPE_SECRET_KEY", text = var.stripe_secret_key }
 ```
 
 ### Adding New Workers
 1. Create worker file in `workers/`
-2. Add resource in `workers.tf` (and related `*.tf` file if needed)
-3. Configure bindings and routes
+2. Add an entry to the `workers` local in `workers.tf` (file, compatibility date, bindings)
+3. The `cloudflare_worker` and `cloudflare_worker_version` resources pick it up automatically
+4. Configure routes in `routes.tf` if the worker needs a zone route
+
+### Testing
+
+Two layers:
+
+- **`make verify`** — `terraform fmt -check`, `terraform validate`, and `terraform test` (16 mocked test cases in `tests/main.tftest.hcl` covering DNS, storage, workers/bindings, routes, queue consumer, WAF, cache, zone settings, load balancing, AI Gateway, and outputs). No credentials needed.
+- **`make test`** — the deployed-platform integration suite (`scripts/tests/test.sh`), including the AI summary endpoint check.
 
 ### Scaling & Performance
 - **D1 Scaling**: Automatic with read replicas

@@ -186,56 +186,57 @@ try {
 
 ```hcl
 # jsherron.com already exists — reference only
+# v5: nested objects are attributes, `account` is read-only, use `filter`
 data "cloudflare_zone" "main" {
-  account_id = var.account_id
-  name       = var.zone_name
-}
+  filter = {
+    name = var.zone_name
+  }
 
-# All zone_id references use data source
-zone_id = data.cloudflare_zone.main.id
+  # All zone_id references use data source
+  zone_id = data.cloudflare_zone.main.id
+}
 ```
 
-### Worker Script with All Binding Types
+### Workers with All Binding Types (v5 pattern)
 
 ```hcl
-resource "cloudflare_workers_script" "api_gateway" {
+resource "cloudflare_worker" "workers" {
+  for_each   = local.workers
   account_id = var.account_id
-  name       = "demo-api-gateway"
-  content    = file("${path.module}/workers/api-gateway.js")
-  module     = true   # required for ES module format (export default)
+  name       = local.worker_names[each.key]
+}
 
-  d1_database_binding {
-    name        = "DB"
-    database_id = cloudflare_d1_database.products.id
-  }
+resource "cloudflare_worker_version" "versions" {
+  for_each = local.workers
 
-  kv_namespace_binding {
-    name         = "SESSIONS"
-    namespace_id = cloudflare_workers_kv_namespace.sessions.id
-  }
+  account_id         = var.account_id
+  worker_id          = cloudflare_worker.workers[each.key].id
+  main_module        = basename(each.value.file)
+  compatibility_date = each.value.compatibility_date
+  deploy             = true   # sends 100% of traffic to this version
 
-  r2_bucket_binding {
-    name        = "UPLOADS"
-    bucket_name = cloudflare_r2_bucket.uploads.name
-  }
+  modules = [
+    {
+      name         = basename(each.value.file)
+      content_file = each.value.file
+      content_type = "application/javascript+module"
+    }
+  ]
 
-  # Queue binding uses 'binding' and 'queue', not 'name' and 'queue_name'
-  queue_binding {
-    binding = "ORDER_QUEUE"
-    queue   = cloudflare_queue.orders.name
-  }
-
-  # Service binding to private worker
-  service_binding {
-    name        = "PRODUCTS_API"
-    service     = cloudflare_workers_script.products_api.name
-    environment = "production"
-  }
-
-  plain_text_binding {
-    name = "ZONE_NAME"
-    text = var.zone_name
-  }
+  # v5 unified binding objects (attribute, not blocks)
+  bindings = [
+    for b in each.value.bindings : {
+      type         = b.type
+      name         = b.name
+      text         = try(b.text, null)
+      namespace_id = try(b.namespace_id, null)
+      bucket_name  = try(b.bucket_name, null)
+      id           = try(b.id, null)          # d1
+      queue_name   = try(b.queue_name, null)
+      service      = try(b.service, null)
+      environment  = try(b.environment, null)
+    }
+  ]
 }
 ```
 
@@ -244,60 +245,51 @@ resource "cloudflare_workers_script" "api_gateway" {
 ```hcl
 resource "cloudflare_queue" "orders" {
   account_id = var.account_id
-  name       = "demo-order-processing"   # attribute is 'name', not 'queue_name'
+  queue_name = "demo-order-processing"   # v5 attribute is 'queue_name'
 }
 ```
 
-### Queue Consumer Registration
+### Queue Consumer Registration (first-class in v5)
 
 ```hcl
-resource "null_resource" "queue_consumer" {
-  depends_on = [
-    cloudflare_queue.orders,
-    cloudflare_workers_script.order_processor,
-  ]
+resource "cloudflare_queue_consumer" "orders" {
+  account_id  = var.account_id
+  queue_id    = cloudflare_queue.orders.queue_id
+  script_name = cloudflare_worker.workers["order_processor"].name
+  type        = "worker"
 
-  triggers = {
-    queue_name      = cloudflare_queue.orders.name
-    consumer_script = cloudflare_workers_script.order_processor.name
-    script_hash     = filemd5("${path.module}/workers/order-processor.js")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      wrangler queues consumer worker remove ${self.triggers.queue_name} ${self.triggers.consumer_script} >/dev/null 2>&1 || true
-      wrangler queues consumer worker add ${self.triggers.queue_name} ${self.triggers.consumer_script}
-    EOT
+  settings = {
+    batch_size  = 10
+    max_retries = 3
   }
 }
 ```
 
-### Cache Rules (replacing Page Rules)
+### Cache Rules
 
 ```hcl
 resource "cloudflare_ruleset" "cache_rules" {
-  zone_id     = data.cloudflare_zone.main.id
-  name        = "Cache Rules"
-  kind        = "zone"
-  phase       = "http_request_cache_settings"
+  zone_id = data.cloudflare_zone.main.id
+  name    = "Demo cache rules"
+  kind    = "zone"
+  phase   = "http_request_cache_settings"
 
-  rules {
-    expression = "(http.host eq \"api.${var.zone_name}\" and starts_with(http.request.uri.path, \"/products\"))"
-    action     = "set_cache_settings"
-    enabled    = true
+  # v5: rules are a nested attribute, not blocks
+  rules = [
+    {
+      expression = "(http.host eq \"api.${var.zone_name}\" and starts_with(http.request.uri.path, \"/products\"))"
+      action     = "set_cache_settings"
+      enabled    = true
 
-    action_parameters {
-      cache = true
-      edge_ttl {
-        mode    = "override_origin"
-        default = 300
-      }
-      browser_ttl {
-        mode    = "override_origin"
-        default = 300
+      action_parameters = {
+        cache = true
+        edge_ttl = {
+          mode    = "override_origin"
+          default = 300
+        }
       }
     }
-  }
+  ]
 }
 ```
 
@@ -306,13 +298,13 @@ Note: Page Rules (`cloudflare_page_rule`) do not support account-owned tokens (e
 ### D1 Schema Migration
 
 ```hcl
-resource "null_resource" "d1_schema" {
-  depends_on = [cloudflare_d1_database.products]
+resource "terraform_data" "d1_schema" {
+  depends_on = [cloudflare_d1_database.products, cloudflare_queue_consumer.orders]
 
-  triggers = {
-    schema_hash = filemd5("${path.module}/db/schema.sql")
-    database_id = cloudflare_d1_database.products.id
-  }
+  triggers_replace = [
+    filemd5("${path.module}/db/schema.sql"),
+    cloudflare_d1_database.products.id,
+  ]
 
   provisioner "local-exec" {
     command = "wrangler d1 execute demo-products --file=${path.module}/db/schema.sql --remote"
@@ -379,16 +371,13 @@ The binding is either:
 
 Check with:
 ```bash
-terraform state show cloudflare_workers_script.api_gateway | grep -A3 "binding"
+terraform state show 'cloudflare_worker_version.versions["api_gateway"]' | grep -A3 "binding"
 ```
 
 ### Queue Binding Attribute Names
-Provider v4 uses `binding` and `queue`, not `name` and `queue_name`:
+v5 unified bindings use `queue_name` on a binding object:
 ```hcl
-queue_binding {
-  binding = "ORDER_QUEUE"   # not 'name'
-  queue   = "queue-name"    # not 'queue_name'
-}
+{ type = "queue", name = "ORDER_QUEUE", queue_name = "demo-order-processing" }
 ```
 
 ### Deployment State Detection
@@ -401,7 +390,7 @@ terraform state list
 terraform state show data.cloudflare_zone.main
 
 # Check specific worker bindings
-terraform state show cloudflare_workers_script.api_gateway
+terraform state show 'cloudflare_worker_version.versions["api_gateway"]'
 ```
 
 ### Diagnostics
