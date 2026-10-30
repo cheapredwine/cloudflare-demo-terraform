@@ -26,8 +26,22 @@ resource "cloudflare_ruleset" "waf_managed" {
 
       action_parameters = {
         # Cloudflare Managed Ruleset — executed as-is for this demo zone.
-        # Per-rule overrides take a 32-char hex rule id; see the Managed
-        # Ruleset docs when tuning for real traffic.
+        #
+        # Example override (disabled): skip OWASP rule 949110
+        # ("Inbound Anomaly Score Exceeded") for admin paths. Managed-rule IDs
+        # are 32-char hex; the OWASP 949110 rule ID ends in ...843b323c. Resolve
+        # the full ID once via the API, then uncomment:
+        #   GET /zones/{zone_id}/rulesets/phases/http_config_settings/entrypoint
+        # and set rules[].id to the hex ID ending in 843b323c.
+        #
+        # overrides = {
+        #   rules = [
+        #     {
+        #       id      = "<32-char-hex-rule-id-ending-in-843b323c>"
+        #       enabled = false
+        #     }
+        #   ]
+        # }
         id = "efb7b899d074703f805dec1c688a04ef"
       }
 
@@ -118,5 +132,25 @@ resource "cloudflare_ruleset" "redirects" {
         }
       }
     }
+    # Rule 2: Redirect HTTP to HTTPS
+    # Uncomment to enforce TLS on all requests. Note: redundant with Cloudflare's
+    # "Always Use HTTPS" zone setting; the min_tls_version zone setting in cdn.tf
+    # already sets the TLS floor. Kept as a demo toggle (original config, 2026-08).
+    # {
+    #   enabled     = true
+    #   description = "Force HTTPS"
+    #   expression  = "(not ssl)"
+    #   action      = "redirect"
+    #
+    #   action_parameters = {
+    #     from_value = {
+    #       status_code = 301
+    #       target_url = {
+    #         expression = "concat(\"https://\", http.host, http.request.uri.path)"
+    #       }
+    #       preserve_query_string = true
+    #     }
+    #   }
+    # }
   ]
 }

@@ -195,6 +195,11 @@ run "waf_custom_ruleset" {
     error_message = "custom WAF should challenge rather than hard-block humans"
     condition     = anytrue([for r in cloudflare_ruleset.waf_custom.rules : r.action == "managed_challenge"])
   }
+
+  assert {
+    error_message = "admin-path rule should reference the corporate IP allowlist"
+    condition     = anytrue([for r in cloudflare_ruleset.waf_custom.rules : can(regex("203\\.0\\.113\\.0/24", r.expression))])
+  }
 }
 
 run "waf_rate_limit_ruleset" {
@@ -222,6 +227,11 @@ run "waf_redirects" {
   assert {
     error_message = "redirects ruleset should be preserved from the v4 config"
     condition     = cloudflare_ruleset.redirects.phase == "http_request_dynamic_redirect"
+  }
+
+  assert {
+    error_message = "redirects ruleset should carry exactly 1 enabled rule (Rule 2 HTTPS toggle stays commented)"
+    condition     = length(cloudflare_ruleset.redirects.rules) == 1
   }
 }
 

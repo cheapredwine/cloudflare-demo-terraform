@@ -9,7 +9,7 @@ help:
 	@printf "  make destroy       Tear down infra\n"
 	@printf "  make fresh         Destroy + redeploy\n\n"
 	@printf "Validation:\n"
-	@printf "  make verify        fmt check + validate + terraform test (no credentials needed)\n"
+	@printf "  make verify        config guards + fmt + validate + terraform test (offline)\n"
 	@printf "  make fmt           terraform fmt -recursive -check\n"
 	@printf "  make validate      terraform validate\n"
 	@printf "  make tftest        terraform test (mocked, offline)\n"
@@ -40,7 +40,10 @@ fresh:
 smoke:
 	./scripts/lifecycle/run-demo.sh test
 
-verify: fmt validate tftest
+verify: config-checks fmt validate tftest
+
+config-checks:
+	bash scripts/tests/config-checks.sh
 
 fmt:
 	terraform fmt -recursive -check

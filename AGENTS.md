@@ -47,6 +47,8 @@ cdn.tf                   # Cache rules + zone settings (cache_level, min_tls_ver
 load_balancer.tf         # Health monitor, origin pool, zone load balancer
 outputs.tf               # Terraform outputs
 tests/main.tftest.hcl    # 16 mocked terraform test cases (make verify)
+scripts/tests/config-checks.sh  # config-content guards (Rule 2 toggle, 949110 guidance)
+.github/workflows/verify.yml    # CI: mirrors make verify, no secrets
 scripts/empty-r2.py      # R2 destroy-time bucket emptying (token via env only)
 workers/
   api-gateway.js         # Request routing, CORS, service bindings to products_api
@@ -226,7 +228,8 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 ## Next Session Notes
 
 - Migrated to Cloudflare provider v5 (v5.28.1), Terraform CLI 1.17
-- `make verify` = fmt + validate + 16 mocked terraform tests (offline)
+- `make verify` = config guards + fmt + validate + 16 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
+- Rule 2 (Force HTTPS) demo toggle restored as a comment in waf.tf redirects; OWASP 949110 override guidance in comments (full 32-hex rule ID must be resolved via API — ends in ...843b323c)
 - New: managed/custom/rate-limit WAF, cache rules + zone settings, load balancer, AI Gateway + Workers AI summary endpoint
 - First real `terraform apply` must show the moved blocks as renames (DNS records + 4 workers); verify with `terraform plan` before applying
 - Zone: jsherron.com
