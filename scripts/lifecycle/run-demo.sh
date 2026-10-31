@@ -12,6 +12,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 # Parse command line arguments
 ACTION=${1:-deploy}
 ZONE_NAME=""
+# Extra terraform arguments; --zone adds -var zone_name=... so Terraform
+# deploys to the same zone the script then tests.
+TF_ZONE_ARGS=()
 
 show_help() {
 	echo "🚀 Cloudflare Demo Platform Management"
@@ -81,6 +84,7 @@ get_zone_name() {
 		local arg="${args[$i]}"
 		if [[ $arg == --zone=* ]]; then
 			ZONE_NAME="${arg#*=}"
+			TF_ZONE_ARGS=(-var "zone_name=$ZONE_NAME")
 			return
 		elif [ "$arg" == "--zone" ]; then
 			i=$((i + 1))
@@ -89,6 +93,7 @@ get_zone_name() {
 				exit 1
 			fi
 			ZONE_NAME="${args[$i]}"
+			TF_ZONE_ARGS=(-var "zone_name=$ZONE_NAME")
 			return
 		fi
 		i=$((i + 1))
@@ -96,7 +101,7 @@ get_zone_name() {
 
 	# Extract from terraform.tfvars
 	if [ -f "terraform.tfvars" ]; then
-		ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
+		ZONE_NAME=$(sed -n 's/^zone_name[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
 	fi
 
 	if [ -z "$ZONE_NAME" ]; then
@@ -109,7 +114,7 @@ check_prerequisites
 
 needs_zone_name() {
 	case "$ACTION" in
-	deploy | reset | fresh | test)
+	deploy | destroy | reset | fresh | test)
 		return 0
 		;;
 	*)
@@ -129,7 +134,7 @@ echo ""
 deploy_infrastructure() {
 	echo "🏗️  Deploying infrastructure..."
 	terraform init
-	if ! terraform apply -auto-approve; then
+	if ! terraform apply -auto-approve "${TF_ZONE_ARGS[@]}"; then
 		echo "❌ Terraform deployment failed"
 		exit 1
 	fi
@@ -154,31 +159,34 @@ reset_data() {
 		exit 1
 	fi
 
-	echo "Clearing database and cache..."
-
-	# Reset via admin API (password from secrets/admin_password via lib/env.sh)
+	# Admin API calls need the password (secrets/admin_password via lib/env.sh)
 	if [ -z "${TF_VAR_admin_password:-}" ]; then
 		echo "❌ Put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
 		exit 1
 	fi
-	local admin_auth
-	admin_auth=$(admin_curl_config)
-	response=$(curl -s -w "%{http_code}" -K "$admin_auth" \
-		-X POST "https://admin.$ZONE_NAME/setup" -o /dev/null)
-	rm -f "$admin_auth"
+	ADMIN_AUTH=$(admin_curl_config)
+	trap 'rm -f "$ADMIN_AUTH"' EXIT
 
-	if [ "$response" -eq 200 ]; then
-		echo "✅ Database reset"
-	else
-		echo "⚠️  Database reset may have failed (HTTP $response)"
+	echo "Creating tables (if missing) and deleting all products and orders..."
+	response=$(curl -s -w "%{http_code}" -K "$ADMIN_AUTH" \
+		-X POST "https://admin.$ZONE_NAME/setup" -o /dev/null || true)
+	if [ "$response" = "200" ]; then
+		response=$(curl -s -w "%{http_code}" -K "$ADMIN_AUTH" \
+			-X POST "https://admin.$ZONE_NAME/reset" -o /dev/null || true)
 	fi
 
-	# Seed fresh data
+	if [ "$response" = "200" ]; then
+		echo "✅ Database emptied"
+	else
+		echo "⚠️  Database reset failed (HTTP $response)"
+	fi
+
+	# Seed fresh data (also clears the products API's KV cache)
 	echo "Loading sample data..."
 	response=$(curl -s -w "%{http_code}" \
-		-X POST "https://api.$ZONE_NAME/api/products/seed" -o /tmp/seed_response.json)
+		-X POST "https://api.$ZONE_NAME/api/products/seed" -o /dev/null || true)
 
-	if [ "$response" -eq 200 ]; then
+	if [ "$response" = "200" ]; then
 		echo "✅ Sample data loaded"
 	else
 		echo "⚠️  Sample data load may have failed (HTTP $response)"
@@ -201,7 +209,7 @@ destroy_infrastructure() {
 		exit 0
 	fi
 
-	if terraform destroy -auto-approve; then
+	if terraform destroy -auto-approve "${TF_ZONE_ARGS[@]}"; then
 		echo "✅ Infrastructure destroyed successfully"
 		echo "💰 All costs stopped"
 	else
@@ -317,7 +325,7 @@ show_quick_start() {
 	echo "   # Create order"
 	echo "   curl -X POST https://api.$ZONE_NAME/api/orders \\"
 	echo "     -H 'Content-Type: application/json' \\"
-	echo "     -d '{\"customer_id\":\"demo\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}'"
+	echo "     -d '{\"customer_id\":\"demo\",\"items\":[{\"product_id\":<id>,\"quantity\":1}]}'"
 	echo ""
 	echo "   # Upload file"
 	echo "   curl -X POST https://api.$ZONE_NAME/api/upload -F 'file=@image.jpg'"
@@ -339,6 +347,8 @@ run_demo_commands() {
 	response=$(curl -s -X POST "https://api.$ZONE_NAME/api/products" \
 		-H "Content-Type: application/json" \
 		-d '{"name":"Demo Product","description":"Created by script","price":99.99,"category":"demo","stock":10}')
+	# Order the product just created (IDs aren't reused, so don't assume 1)
+	PRODUCT_ID=$(echo "$response" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2 || true)
 
 	if command -v jq &>/dev/null; then
 		echo "$response" | jq .
@@ -360,7 +370,7 @@ run_demo_commands() {
 	echo "Creating sample order..."
 	response=$(curl -s -X POST "https://api.$ZONE_NAME/api/orders" \
 		-H "Content-Type: application/json" \
-		-d '{"customer_id":"script-demo","items":[{"product_id":1,"quantity":1,"unit_price":99.99}],"total":99.99}')
+		-d "{\"customer_id\":\"script-demo\",\"items\":[{\"product_id\":${PRODUCT_ID:-1},\"quantity\":1}]}")
 
 	if command -v jq &>/dev/null; then
 		echo "$response" | jq .

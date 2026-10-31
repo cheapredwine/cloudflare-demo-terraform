@@ -85,7 +85,7 @@ function Invoke-Http {
     if ($Form) { $params.Form = $Form }
     if ($User) {
         $pair = "{0}:{1}" -f $User, $Password
-        $token = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+        $token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
         if (-not $params.ContainsKey("Headers")) { $params.Headers = @{} }
         $params.Headers["Authorization"] = "Basic $token"
     }
@@ -177,7 +177,7 @@ function Show-QuickStart {
     Write-Host "   # Create order"
     Write-Host "   curl -X POST https://api.$script:ZoneName/api/orders \"
     Write-Host "     -H 'Content-Type: application/json' \"
-    Write-Host "     -d '{\"customer_id\":\"demo\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}'"
+    Write-Host "     -d '{\"customer_id\":\"demo\",\"items\":[{\"product_id\":<id>,\"quantity\":1}]}'"
     Write-Host ""
     Write-Host "🧹 Management:"
     Write-Host "   ./run-demo.ps1 reset"
@@ -205,7 +205,7 @@ function Show-SuccessMessage {
 function Deploy-Infrastructure {
     Write-Host "🏗️  Deploying infrastructure..."
     Invoke-CheckedCommand -Command terraform -Arguments @("init")
-    Invoke-CheckedCommand -Command terraform -Arguments @("apply", "-auto-approve")
+    Invoke-CheckedCommand -Command terraform -Arguments (@("apply", "-auto-approve") + $script:TfZoneArgs)
 
     Write-Host "✅ Infrastructure deployed successfully!"
     Write-Host ""
@@ -227,15 +227,18 @@ function Reset-Data {
         exit 1
     }
 
-    Write-Host "Clearing database and cache..."
-    $setupResp = Invoke-Http -Uri "https://admin.$script:ZoneName/setup" -Method "POST" -User "admin" -Password $script:AdminPassword
-    if ($setupResp.StatusCode -eq 200) {
-        Write-Host "✅ Database reset"
+    Write-Host "Creating tables (if missing) and deleting all products and orders..."
+    $resp = Invoke-Http -Uri "https://admin.$script:ZoneName/setup" -Method "POST" -User "admin" -Password $script:AdminPassword
+    if ($resp.StatusCode -eq 200) {
+        $resp = Invoke-Http -Uri "https://admin.$script:ZoneName/reset" -Method "POST" -User "admin" -Password $script:AdminPassword
+    }
+    if ($resp.StatusCode -eq 200) {
+        Write-Host "✅ Database emptied"
     } else {
-        Write-Host "⚠️  Database reset may have failed (HTTP $($setupResp.StatusCode))"
+        Write-Host "⚠️  Database reset failed (HTTP $($resp.StatusCode))"
     }
 
-    Write-Host "Loading sample data..."
+    Write-Host "Loading sample data (also clears the products API's KV cache)..."
     $seedResp = Invoke-Http -Uri "https://api.$script:ZoneName/api/products/seed" -Method "POST"
     if ($seedResp.StatusCode -eq 200) {
         Write-Host "✅ Sample data loaded"
@@ -257,7 +260,7 @@ function Destroy-Infrastructure {
         exit 0
     }
 
-    Invoke-CheckedCommand -Command terraform -Arguments @("destroy", "-auto-approve")
+    Invoke-CheckedCommand -Command terraform -Arguments (@("destroy", "-auto-approve") + $script:TfZoneArgs)
     Write-Host "✅ Infrastructure destroyed successfully"
     Write-Host "💰 All costs stopped"
 }
@@ -269,6 +272,9 @@ function Run-DemoCommands {
     Write-Host "Creating sample product..."
     $createProduct = Invoke-Http -Uri "https://api.$script:ZoneName/api/products" -Method "POST" -ContentType "application/json" -Body '{"name":"Demo Product","description":"Created by script","price":99.99,"category":"demo","stock":10}'
     Write-Host (Parse-JsonOrRaw $createProduct.Content)
+    # Order the product just created (IDs aren't reused, so don't assume 1)
+    $idMatch = [regex]::Match([string]$createProduct.Content, '"id":(\d+)')
+    $productId = if ($idMatch.Success) { $idMatch.Groups[1].Value } else { "1" }
 
     Write-Host ""
     Write-Host "Getting all products..."
@@ -277,7 +283,7 @@ function Run-DemoCommands {
 
     Write-Host ""
     Write-Host "Creating sample order..."
-    $createOrder = Invoke-Http -Uri "https://api.$script:ZoneName/api/orders" -Method "POST" -ContentType "application/json" -Body '{"customer_id":"script-demo","items":[{"product_id":1,"quantity":1,"unit_price":99.99}],"total":99.99}'
+    $createOrder = Invoke-Http -Uri "https://api.$script:ZoneName/api/orders" -Method "POST" -ContentType "application/json" -Body "{`"customer_id`":`"script-demo`",`"items`":[{`"product_id`":$productId,`"quantity`":1}]}"
     Write-Host (Parse-JsonOrRaw $createOrder.Content)
 
     Write-Host ""
@@ -285,7 +291,7 @@ function Run-DemoCommands {
 }
 
 function Needs-ZoneName {
-    return @("deploy", "reset", "fresh", "test") -contains $script:Action
+    return @("deploy", "destroy", "reset", "fresh", "test") -contains $script:Action
 }
 
 function Parse-Args {
@@ -320,6 +326,9 @@ function Parse-Args {
             $script:ZoneName = $argv[$i]
         }
     }
+
+    # --zone also goes to Terraform, so it deploys to the zone the script tests.
+    $script:TfZoneArgs = if ($script:ZoneName) { @("-var", "zone_name=$($script:ZoneName)") } else { @() }
 }
 
 function Check-Prerequisites {

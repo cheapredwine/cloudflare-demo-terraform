@@ -47,39 +47,42 @@ Write-Host " Rounds: $rounds"
 Write-Host "================================================"
 Write-Host ""
 
-Write-Host "Busting KV cache..."
-[void](Invoke-Http -Uri "$api/api/products" -Method "POST" -ContentType "application/json" -Body '{"name":"__cache_bust__","price":0.01}')
-$products = (Invoke-Http -Uri "$api/api/products").Content
-$idMatch = [regex]::Match($products, '"id":(\d+)')
-if ($idMatch.Success) {
-    [void](Invoke-Http -Uri "$api/api/products/$($idMatch.Groups[1].Value)" -Method "DELETE")
+# Clear the products API's KV cache. Any write clears it, so create a
+# throwaway product and delete it again by the id the POST returned (never
+# touching a real product).
+function Clear-Cache {
+    $created = Invoke-Http -Uri "$api/api/products" -Method "POST" -ContentType "application/json" -Body '{"name":"__cache_bust__","price":0.01}'
+    $idMatch = [regex]::Match([string]$created.Content, '"id":(\d+)')
+    if ($idMatch.Success) {
+        [void](Invoke-Http -Uri "$api/api/products/$($idMatch.Groups[1].Value)" -Method "DELETE")
+    }
 }
-Write-Host "Cache cleared."
-Write-Host ""
 
-$missTimes = @()
-Write-Host "[ MISS ] First request - no cache, querying D1..."
-for ($i = 1; $i -le $rounds; $i++) {
+# Time one GET; return its milliseconds and cache header from that same request.
+function Get-Timed {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $resp = Invoke-Http -Uri "$api/api/products"
     $sw.Stop()
-    $ms = [int][Math]::Round($sw.Elapsed.TotalMilliseconds)
-    $missTimes += $ms
-    $header = if ($resp.Headers["x-products-cache"]) { $resp.Headers["x-products-cache"] } else { "?" }
-    Write-Host "  Round $i`: ${ms}ms  [$header]"
+    $cache = if ($resp.Headers["x-products-cache"]) { [string]$resp.Headers["x-products-cache"] } else { "?" }
+    return [pscustomobject]@{ Ms = [int][Math]::Round($sw.Elapsed.TotalMilliseconds); Cache = $cache }
+}
+
+$missTimes = @()
+Write-Host "[ MISS ] Cache cleared before each request: querying D1..."
+for ($i = 1; $i -le $rounds; $i++) {
+    Clear-Cache
+    $t = Get-Timed
+    $missTimes += $t.Ms
+    Write-Host "  Round $i`: $($t.Ms)ms  [$($t.Cache)]"
 }
 
 $hitTimes = @()
 Write-Host ""
-Write-Host "[ HIT ] Subsequent requests - served from KV cache..."
+Write-Host "[ HIT ] Cache left alone: served from KV..."
 for ($i = 1; $i -le $rounds; $i++) {
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $resp = Invoke-Http -Uri "$api/api/products"
-    $sw.Stop()
-    $ms = [int][Math]::Round($sw.Elapsed.TotalMilliseconds)
-    $hitTimes += $ms
-    $header = if ($resp.Headers["x-products-cache"]) { $resp.Headers["x-products-cache"] } else { "?" }
-    Write-Host "  Round $i`: ${ms}ms  [$header]"
+    $t = Get-Timed
+    $hitTimes += $t.Ms
+    Write-Host "  Round $i`: $($t.Ms)ms  [$($t.Cache)]"
 }
 
 $missAvg = [int][Math]::Round((($missTimes | Measure-Object -Average).Average))
@@ -95,6 +98,6 @@ Write-Host "  Average MISS (D1 query):  ${missAvg}ms"
 Write-Host "  Average HIT  (KV cache):  ${hitAvg}ms"
 Write-Host "  Cache speedup:            ${speedup}x faster"
 Write-Host ""
-Write-Host "  KV cache TTL: 10 minutes"
-Write-Host "  Edge cache TTL (Cache Rules): 5 minutes"
+Write-Host "  KV cache TTL: 10 minutes (workers/products-api.js)"
+Write-Host "  api.<zone> is served by a Worker, so cdn.tf's cache rules don't apply here."
 Write-Host ""

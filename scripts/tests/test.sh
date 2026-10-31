@@ -16,7 +16,7 @@ FAIL=0
 ERRORS=()
 
 if [ -f "terraform.tfvars" ]; then
-	ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
+	ZONE_NAME=$(sed -n 's/^zone_name[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
 fi
 
 if [ -z "$ZONE_NAME" ]; then
@@ -80,12 +80,14 @@ RESP_BODY=$(mktemp)
 RESP_STATUS=$(mktemp)
 trap 'rm -f "$RESP_BODY" "$RESP_STATUS" "$ADMIN_AUTH"' EXIT
 
+# `|| true`: a network error (curl prints status 000) is recorded as a FAIL
+# instead of ending the whole run under `set -e`.
 http_status() {
-	curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$@"
+	curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$@" || true
 }
 
 http_body() {
-	curl -s --max-time 15 "$@"
+	curl -s --max-time 15 "$@" || true
 }
 
 wait_for_order_in_admin() {
@@ -109,7 +111,7 @@ wait_for_order_in_admin() {
 
 # Writes body to $RESP_BODY, status to $RESP_STATUS
 req() {
-	curl -s -w "%{http_code}" --max-time 15 -o "$RESP_BODY" "$@" >"$RESP_STATUS"
+	curl -s -w "%{http_code}" --max-time 15 -o "$RESP_BODY" "$@" >"$RESP_STATUS" || true
 }
 
 get_status() { cat "$RESP_STATUS"; }
@@ -289,7 +291,15 @@ echo "test file content $(date)" >"$TMPFILE"
 req -X POST "$API/api/upload" -F "file=@$TMPFILE"
 assert_status "file upload returns 200" 200 "$(get_status)"
 assert_contains "upload returns filename" "filename" "$(get_body)"
-assert_contains "upload returns url" "uploads.$ZONE_NAME" "$(get_body)"
+assert_contains "upload returns url" "api.$ZONE_NAME/api/upload/" "$(get_body)"
+
+# The returned URL serves the same bytes back
+UPLOAD_URL=$(get_body | grep -o '"url":"[^"]*"' | cut -d'"' -f4)
+if [ -n "$UPLOAD_URL" ] && [ "$(http_body "$UPLOAD_URL")" = "$(cat "$TMPFILE")" ]; then
+	pass "uploaded file downloads from its url"
+else
+	fail "uploaded file downloads from its url"
+fi
 
 rm "$TMPFILE"
 
@@ -322,6 +332,24 @@ echo ""
 # 7. Admin Panel
 # ---------------------------------------------------------------------------
 echo "[ 7 ] Admin Panel"
+
+# waf.tf challenges admin.<zone> for IPs outside admin_allowlist_cidr. A
+# challenge carries the cf-mitigated header; say so instead of failing every
+# admin check with a confusing status code.
+if curl -s -o /dev/null -D - --max-time 15 "$ADMIN/" | grep -qi '^cf-mitigated: challenge'; then
+	fail "admin.$ZONE_NAME is challenged by the WAF: add your IP to admin_allowlist_cidr and re-apply"
+	echo ""
+	echo " Results: $PASS/$((PASS + FAIL)) passed"
+	exit 1
+fi
+
+# Plain HTTP must redirect before any password is asked for
+status=$(http_status "http://admin.$ZONE_NAME/")
+assert_status "admin over plain HTTP redirects to HTTPS" 301 "$status"
+
+# Cross-site POST is refused even with valid credentials
+status=$(http_status -K "$ADMIN_AUTH" -X POST -H "Origin: https://evil.example" "$ADMIN/reset")
+assert_status "cross-site POST /reset is refused" 403 "$status"
 
 # No auth
 status=$(http_status "$ADMIN/")

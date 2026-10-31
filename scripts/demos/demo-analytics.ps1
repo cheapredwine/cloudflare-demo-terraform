@@ -39,7 +39,7 @@ function Invoke-Http {
     if ($Form) { $params.Form = $Form }
     if ($User) {
         $pair = "{0}:{1}" -f $User, $Password
-        $token = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+        $token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
         if (-not $params.ContainsKey("Headers")) { $params.Headers = @{} }
         $params.Headers["Authorization"] = "Basic $token"
     }
@@ -61,7 +61,6 @@ function Invoke-Q {
 }
 
 $zoneName = Get-TfvarsValue "zone_name"
-$accountId = Get-TfvarsValue "account_id"
 if ([string]::IsNullOrWhiteSpace($zoneName)) {
     Write-Host "ERROR: zone_name not found in terraform.tfvars"
     exit 1
@@ -87,23 +86,33 @@ Write-Host ""
 Write-Host "This script generates traffic across all workers."
 Write-Host "Open Cloudflare dashboard to see live metrics:"
 Write-Host ""
-Write-Host "  Workers Analytics:"
-Write-Host "  https://dash.cloudflare.com/$accountId/workers/overview"
+# ?to=/:account/... links let the dashboard pick the account, so the
+# account ID never appears on screen.
+Write-Host "  Workers & Pages:"
+Write-Host "  https://dash.cloudflare.com/?to=/:account/workers-and-pages"
 Write-Host ""
 Write-Host "  Per-worker (API Gateway):"
-Write-Host "  https://dash.cloudflare.com/$accountId/workers/services/view/demo-api-gateway/production/metrics"
+Write-Host "  https://dash.cloudflare.com/?to=/:account/workers/services/view/demo-api-gateway/production"
 Write-Host ""
 Write-Host "  Per-worker (Products API):"
-Write-Host "  https://dash.cloudflare.com/$accountId/workers/services/view/demo-products-api/production/metrics"
+Write-Host "  https://dash.cloudflare.com/?to=/:account/workers/services/view/demo-products-api/production"
 Write-Host ""
 Write-Host "  Zone Analytics:"
-Write-Host "  https://dash.cloudflare.com/$accountId/$zoneName/analytics/traffic"
+Write-Host "  https://dash.cloudflare.com/?to=/:account/$zoneName/analytics/traffic"
+Write-Host ""
+Write-Host "Rounds are 10 s apart: waf.tf rate-limits /api/* to 50 requests per"
+Write-Host "10 s per IP, and blocked requests wouldn't reach the Workers."
 Write-Host ""
 Write-Host "Generating traffic... ($rounds rounds)"
 Write-Host ""
 
 for ($i = 1; $i -le $rounds; $i++) {
+    if ($i -gt 1) { Start-Sleep -Seconds 10 }
     Write-Host "Round $i/$rounds"
+
+    # A real product ID (IDs aren't reused, so after a reset 1 may not exist)
+    $idMatch = [regex]::Match([string](Invoke-Http -Uri "$api/api/products").Content, '"id":(\d+)')
+    $productId = if ($idMatch.Success) { $idMatch.Groups[1].Value } else { "1" }
 
     Write-Host -NoNewline "  Auth... "
     $login = Invoke-Http -Uri "$api/api/auth/login" -Method "POST" -ContentType "application/json" -Body '{"email":"demo@example.com","password":"demo"}'
@@ -118,12 +127,12 @@ for ($i = 1; $i -le $rounds; $i++) {
     Invoke-Q -Uri "$api/api/products"
     Invoke-Q -Uri "$api/api/products"
     Invoke-Q -Uri "$api/api/products"
-    Invoke-Q -Uri "$api/api/products/1"
-    Invoke-Q -Uri "$api/api/products/2"
+    Invoke-Q -Uri "$api/api/products/$productId"
+    Invoke-Q -Uri "$api/api/products/999999" # 404
     Write-Host "done"
 
     Write-Host -NoNewline "  Orders... "
-    Invoke-Q -Uri "$api/api/orders" -Method "POST" -ContentType "application/json" -Body "{`"customer_id`":`"demo-$i`",`"items`": [{`"product_id`":1,`"quantity`":1,`"unit_price`":24.99}],`"total`":24.99}"
+    Invoke-Q -Uri "$api/api/orders" -Method "POST" -ContentType "application/json" -Body "{`"customer_id`":`"demo-$i`",`"items`": [{`"product_id`":$productId,`"quantity`":1}]}"
     Invoke-Q -Uri "$api/api/orders" -Method "POST" -ContentType "application/json" -Body '{"customer_id":"missing-items"}'
     Write-Host "done"
 
@@ -157,6 +166,6 @@ Write-Host " ~$($rounds * 25) requests sent across all workers"
 Write-Host "================================================"
 Write-Host ""
 Write-Host "Dashboard links (may take ~1 min to show data):"
-Write-Host "  Workers: https://dash.cloudflare.com/$accountId/workers/overview"
-Write-Host "  Zone:    https://dash.cloudflare.com/$accountId/$zoneName/analytics/traffic"
+Write-Host "  Workers: https://dash.cloudflare.com/?to=/:account/workers-and-pages"
+Write-Host "  Zone:    https://dash.cloudflare.com/?to=/:account/$zoneName/analytics/traffic"
 Write-Host ""

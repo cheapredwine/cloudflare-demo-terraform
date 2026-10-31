@@ -56,7 +56,8 @@ function Invoke-Http {
         [string]$ContentType,
         [string]$User,
         [string]$Password,
-        [hashtable]$Form
+        [hashtable]$Form,
+        [switch]$NoRedirect
     )
     $params = @{
         Uri                = $Uri
@@ -68,13 +69,19 @@ function Invoke-Http {
     if ($Body) { $params.Body = $Body }
     if ($ContentType) { $params.ContentType = $ContentType }
     if ($Form) { $params.Form = $Form }
+    if ($NoRedirect) { $params.MaximumRedirection = 0 }
     if ($User) {
         $pair = "{0}:{1}" -f $User, $Password
-        $token = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+        $token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
         if (-not $params.ContainsKey("Headers")) { $params.Headers = @{} }
         $params.Headers["Authorization"] = "Basic $token"
     }
-    return Invoke-WebRequest @params
+    # A network error is recorded as status 0 (a FAIL), not a script crash.
+    try {
+        return Invoke-WebRequest @params
+    } catch {
+        return [pscustomobject]@{ StatusCode = 0; Content = ""; Headers = @{} }
+    }
 }
 
 function Wait-ForOrderInAdmin([string]$AdminBase, [string]$OrderId) {
@@ -230,7 +237,22 @@ Set-Content -Path $tmpFile -Value ("test file content " + (Get-Date)) -NoNewline
 $upload = Invoke-Http -Uri "$api/api/upload" -Method "POST" -Form @{ file = Get-Item $tmpFile }
 Assert-Status "file upload returns 200" 200 $upload.StatusCode
 Assert-Contains "upload returns filename" "filename" $upload.Content
-Assert-Contains "upload returns url" "uploads.$zoneName" $upload.Content
+Assert-Contains "upload returns url" "api.$zoneName/api/upload/" $upload.Content
+
+# The returned URL serves the same bytes back
+$uploadUrl = try { ($upload.Content | ConvertFrom-Json).url } catch { "" }
+$expected = Get-Content -Path $tmpFile -Raw
+$downloaded = ""
+if ($uploadUrl) {
+    # application/octet-stream comes back as bytes
+    $body = (Invoke-Http -Uri $uploadUrl).Content
+    $downloaded = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
+}
+if ($uploadUrl -and $downloaded -eq $expected) {
+    Pass "uploaded file downloads from its url"
+} else {
+    Fail "uploaded file downloads from its url"
+}
 Remove-Item $tmpFile -Force
 
 Assert-Status "upload with no file returns 400" 400 ((Invoke-Http -Uri "$api/api/upload" -Method "POST").StatusCode)
@@ -250,6 +272,16 @@ if ($summary.StatusCode -eq 200) {
 Write-Host ""
 
 Write-Host "[ 7 ] Admin Panel"
+
+# waf.tf challenges admin.<zone> for IPs outside admin_allowlist_cidr.
+$probe = Invoke-Http -Uri "$admin/"
+if ($probe.Headers["cf-mitigated"] -eq "challenge") {
+    Write-Host "  FAIL  admin.$zoneName is challenged by the WAF: add your IP to admin_allowlist_cidr and re-apply"
+    exit 1
+}
+
+Assert-Status "admin over plain HTTP redirects to HTTPS" 301 ((Invoke-Http -Uri "http://admin.$zoneName/" -NoRedirect).StatusCode)
+Assert-Status "cross-site POST /reset is refused" 403 ((Invoke-Http -Uri "$admin/reset" -Method "POST" -User "admin" -Password $script:AdminPassword -Headers @{ Origin = "https://evil.example" }).StatusCode)
 Assert-Status "admin without auth returns 401" 401 ((Invoke-Http -Uri "$admin/").StatusCode)
 Assert-Status "admin with wrong password returns 401" 401 ((Invoke-Http -Uri "$admin/" -User "admin" -Password "wrongpassword").StatusCode)
 
