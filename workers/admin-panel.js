@@ -10,7 +10,7 @@ export default {
 
     // Basic auth check
     const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !isValidAuth(authHeader)) {
+    if (!authHeader || !(await isValidAuth(authHeader, env))) {
       return new Response('Unauthorized', {
         status: 401,
         headers: {
@@ -45,10 +45,17 @@ export default {
   }
 };
 
-function isValidAuth(authHeader) {
-  // Demo auth: admin/demo123
-  const expectedAuth = 'Basic ' + btoa('admin:demo123');
-  return authHeader === expectedAuth;
+// Basic auth (user: admin). The password is the ADMIN_PASSWORD secret binding
+// set from var.admin_password; nothing is hardcoded. Hash both sides so the
+// constant-time compare always sees equal-length inputs.
+async function isValidAuth(authHeader, env) {
+  if (!env.ADMIN_PASSWORD) return false;
+  const encoder = new TextEncoder();
+  const [given, expected] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(authHeader)),
+    crypto.subtle.digest('SHA-256', encoder.encode('Basic ' + btoa('admin:' + env.ADMIN_PASSWORD))),
+  ]);
+  return crypto.subtle.timingSafeEqual(given, expected);
 }
 
 function serveDashboard(env) {

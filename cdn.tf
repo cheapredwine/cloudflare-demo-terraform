@@ -1,8 +1,11 @@
-# CDN / cache (provider v5)
+# CDN: cache rules and zone settings
 #
-# Cache rules plus individual zone settings (v5's cloudflare_zone_setting
-# replaces the v4 cloudflare_zone_settings_override that had to be removed
-# from this project because of v4 provider bugs).
+# Terraform concepts:
+#   - `cloudflare_ruleset` again, this time in the cache phase
+#     (http_request_cache_settings).
+#   - One resource per setting: v5's `cloudflare_zone_setting` manages exactly
+#     one zone setting, so each setting is its own small, reviewable block.
+#     It replaces v4's all-in-one `cloudflare_zone_settings_override`.
 
 # --- Cache rules ---------------------------------------------------------------
 

@@ -1,4 +1,9 @@
-# DNS records (provider v5: cloudflare_record was renamed to cloudflare_dns_record)
+# DNS records
+#
+# Terraform concepts:
+#   - Resources with input variables: `var.origin_ipv4` is set in tfvars.
+#   - A local value naming a magic constant (`100::`) so it reads as intent.
+# (Upgrading from v4's cloudflare_record? See upgrade-from-v4.tf.)
 
 locals {
   # 100:: is the documented discard-prefix placeholder for proxied hostnames
@@ -31,20 +36,4 @@ resource "cloudflare_dns_record" "admin" {
   type    = "AAAA"
   proxied = true
   ttl     = 1
-}
-
-# Preserve state continuity from the v4 provider
-moved {
-  from = cloudflare_record.root
-  to   = cloudflare_dns_record.root
-}
-
-moved {
-  from = cloudflare_record.api
-  to   = cloudflare_dns_record.api
-}
-
-moved {
-  from = cloudflare_record.admin
-  to   = cloudflare_dns_record.admin
 }

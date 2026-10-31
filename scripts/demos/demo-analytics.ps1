@@ -66,6 +66,13 @@ if ([string]::IsNullOrWhiteSpace($zoneName)) {
 
 $api = "https://api.$zoneName"
 $admin = "https://admin.$zoneName"
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
+if ([string]::IsNullOrWhiteSpace($script:AdminPassword)) {
+    Write-Host "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+    exit 1
+}
 $rounds = if ($args.Count -gt 0) { [int]$args[0] } else { 3 }
 
 Write-Host "================================================"
@@ -130,10 +137,10 @@ for ($i = 1; $i -le $rounds; $i++) {
     Write-Host "done"
 
     Write-Host -NoNewline "  Admin... "
-    Invoke-Q -Uri "$admin/" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/stats" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/products" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/orders" -User "admin" -Password "demo123"
+    Invoke-Q -Uri "$admin/" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/stats" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/products" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/orders" -User "admin" -Password $script:AdminPassword
     Invoke-Q -Uri "$admin/" -User "admin" -Password "wrongpassword"
     Write-Host "done"
 

@@ -76,7 +76,7 @@ function Invoke-Http {
 
 function Wait-ForOrderInAdmin([string]$AdminBase, [string]$OrderId) {
     for ($attempt = 1; $attempt -le 15; $attempt++) {
-        $resp = Invoke-Http -Uri "$AdminBase/api/orders" -User "admin" -Password "demo123"
+        $resp = Invoke-Http -Uri "$AdminBase/api/orders" -User "admin" -Password $script:AdminPassword
         if ($resp.Content -match [regex]::Escape($OrderId)) {
             return $true
         }
@@ -93,6 +93,13 @@ if ([string]::IsNullOrWhiteSpace($zoneName)) {
 
 $api = "https://api.$zoneName"
 $admin = "https://admin.$zoneName"
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
+if ([string]::IsNullOrWhiteSpace($script:AdminPassword)) {
+    Write-Host "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+    exit 1
+}
 
 Write-Host "================================================"
 Write-Host " Cloudflare Demo Platform - Integration Tests"
@@ -242,21 +249,21 @@ Write-Host "[ 7 ] Admin Panel"
 Assert-Status "admin without auth returns 401" 401 ((Invoke-Http -Uri "$admin/").StatusCode)
 Assert-Status "admin with wrong password returns 401" 401 ((Invoke-Http -Uri "$admin/" -User "admin" -Password "wrongpassword").StatusCode)
 
-$dash = Invoke-Http -Uri "$admin/" -User "admin" -Password "demo123"
+$dash = Invoke-Http -Uri "$admin/" -User "admin" -Password $script:AdminPassword
 Assert-Status "admin dashboard returns 200" 200 $dash.StatusCode
 Assert-Contains "dashboard returns HTML" "Demo Platform Admin" $dash.Content
 
-$stats = Invoke-Http -Uri "$admin/api/stats" -User "admin" -Password "demo123"
+$stats = Invoke-Http -Uri "$admin/api/stats" -User "admin" -Password $script:AdminPassword
 Assert-Status "admin stats returns 200" 200 $stats.StatusCode
 Assert-Contains "stats returns products count" "products" $stats.Content
 Assert-Contains "stats returns orders count" "orders" $stats.Content
 Assert-Contains "stats returns revenue" "revenue" $stats.Content
 
-$adminProducts = Invoke-Http -Uri "$admin/api/products" -User "admin" -Password "demo123"
+$adminProducts = Invoke-Http -Uri "$admin/api/products" -User "admin" -Password $script:AdminPassword
 Assert-Status "admin products returns 200" 200 $adminProducts.StatusCode
 Assert-Contains "admin products returns array" "products" $adminProducts.Content
 
-$adminOrders = Invoke-Http -Uri "$admin/api/orders" -User "admin" -Password "demo123"
+$adminOrders = Invoke-Http -Uri "$admin/api/orders" -User "admin" -Password $script:AdminPassword
 Assert-Status "admin orders returns 200" 200 $adminOrders.StatusCode
 Assert-Contains "admin orders returns array" "orders" $adminOrders.Content
 

@@ -29,4 +29,21 @@ grep -q '4814384a9e5d4991b9815dcfc25d2f1f' waf.tf ||
 grep -q 'efb7b8c949ac4650a09736fc376e9aee' waf.tf ||
 	fail "managed ruleset lost the Cloudflare Managed Ruleset ID (efb7b8c9...)"
 
+# Tests must stay on plan: a mocked apply still runs the local-exec
+# provisioners (wrangler / empty-r2.py), which call the real Cloudflare API.
+if grep -nE '^\s*command\s*=\s*apply' tests/*.tftest.hcl; then
+	fail "terraform tests must use command = plan (apply runs real provisioners)"
+fi
+
+# The provider cannot move cloudflare_workers_script -> cloudflare_worker
+# (plan fails: "Unable to Move Resource State"); see upgrade-from-v4.tf.
+if grep -nE '^\s*from\s*=\s*cloudflare_workers_script\.' ./*.tf; then
+	fail "moved block from cloudflare_workers_script is unsupported by the provider (use removed + import)"
+fi
+
+# No hardcoded admin credentials anywhere in the Worker code.
+if grep -rn 'demo123' workers/; then
+	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"
+fi
+
 echo "config-checks: all guards passed"

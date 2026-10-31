@@ -19,6 +19,16 @@ fi
 
 API="https://api.$ZONE_NAME"
 ADMIN="https://admin.$ZONE_NAME"
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+ADMIN_PASSWORD="${TF_VAR_admin_password:-}"
+if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
+	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
+fi
+if [ -z "$ADMIN_PASSWORD" ]; then
+	echo "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+	exit 1
+fi
 ROUNDS=${1:-3}
 
 echo "================================================"
@@ -97,10 +107,10 @@ for i in $(seq 1 "$ROUNDS"); do
 
 	# Admin panel
 	printf "  Admin... "
-	q -u "admin:demo123" "$ADMIN/"
-	q -u "admin:demo123" "$ADMIN/api/stats"
-	q -u "admin:demo123" "$ADMIN/api/products"
-	q -u "admin:demo123" "$ADMIN/api/orders"
+	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/"
+	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/stats"
+	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/products"
+	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/orders"
 	q -u "admin:wrongpassword" "$ADMIN/"
 	echo "done"
 

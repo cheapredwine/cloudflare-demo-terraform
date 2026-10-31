@@ -21,9 +21,9 @@ mock_provider "cloudflare" {
 }
 
 variables {
-  cloudflare_api_token = "test-token-value-not-a-real-secret"
-  account_id           = "01a7362d546811e79dd32d0171c0d0e6"
-  zone_name            = "demo-platform.example"
+  admin_password = "test-admin-password-not-real"
+  account_id     = "01a7362d546811e79dd32d0171c0d0e6"
+  zone_name      = "demo-platform.example"
 }
 
 # ---------------------------------------------------------------------------
@@ -85,17 +85,22 @@ run "storage" {
 # Workers
 # ---------------------------------------------------------------------------
 
-run "workers_count" {
+run "workers_defined" {
   command = plan
 
   assert {
-    error_message = "exactly 4 workers should be defined"
-    condition     = length(cloudflare_worker.workers) == 4
+    error_message = "the four demo Workers should have their expected names"
+    condition = [
+      cloudflare_worker.api_gateway.name,
+      cloudflare_worker.products_api.name,
+      cloudflare_worker.order_processor.name,
+      cloudflare_worker.admin_panel.name,
+    ] == ["demo-api-gateway", "demo-products-api", "demo-order-processor", "demo-admin-panel"]
   }
 
   assert {
     error_message = "each worker should get a deployed version"
-    condition     = alltrue([for _, v in cloudflare_worker_version.versions : v.deploy == true])
+    condition     = alltrue([for v in [cloudflare_worker_version.api_gateway, cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] : v.deploy == true])
   }
 }
 
@@ -104,17 +109,17 @@ run "worker_bindings" {
 
   assert {
     error_message = "api_gateway should carry 6 bindings (KV, R2, D1, queue, service, zone name)"
-    condition     = length(cloudflare_worker_version.versions["api_gateway"].bindings) == 6
+    condition     = length(cloudflare_worker_version.api_gateway.bindings) == 6
   }
 
   assert {
     error_message = "products_api should carry 4 bindings (D1, KV, AI, gateway id)"
-    condition     = length(cloudflare_worker_version.versions["products_api"].bindings) == 4
+    condition     = length(cloudflare_worker_version.products_api.bindings) == 4
   }
 
   assert {
     error_message = "products_api should have a Workers AI binding"
-    condition     = anytrue([for b in cloudflare_worker_version.versions["products_api"].bindings : b.type == "ai"])
+    condition     = anytrue([for b in cloudflare_worker_version.products_api.bindings : b.type == "ai"])
   }
 }
 
@@ -302,21 +307,69 @@ run "zone_settings" {
 # ---------------------------------------------------------------------------
 
 run "load_balancer_stack" {
+  # Stay on plan: a mocked apply would still run the local-exec provisioners
+  # (wrangler / empty-r2.py). Pin IDs at plan time so the wiring is comparable.
   command = plan
 
-  assert {
-    error_message = "health monitor should probe /health over HTTP"
-    condition     = cloudflare_load_balancer_monitor.http.path == "/health" && cloudflare_load_balancer_monitor.http.type == "http"
+  override_resource {
+    target          = cloudflare_load_balancer_monitor.http
+    override_during = plan
+    values          = { id = "mock-monitor" }
+  }
+
+  override_resource {
+    target          = cloudflare_load_balancer_pool.primary
+    override_during = plan
+    values          = { id = "mock-pool-primary" }
+  }
+
+  override_resource {
+    target          = cloudflare_load_balancer_pool.secondary
+    override_during = plan
+    values          = { id = "mock-pool-secondary" }
   }
 
   assert {
-    error_message = "pool origin should be the demo origin address"
-    condition     = cloudflare_load_balancer_pool.primary.origins[0].address == "203.0.113.10"
+    error_message = "health monitor should probe /health over HTTP with the app Host header"
+    condition     = cloudflare_load_balancer_monitor.http.path == "/health" && cloudflare_load_balancer_monitor.http.type == "http" && contains(cloudflare_load_balancer_monitor.http.header["Host"], "app.demo-platform.example")
   }
 
   assert {
-    error_message = "load balancer should route app.<zone> with a single default pool"
-    condition     = cloudflare_load_balancer.app.name == "app.demo-platform.example" && length(cloudflare_load_balancer.app.default_pools) == 1
+    error_message = "both pools should share the one health monitor"
+    condition     = cloudflare_load_balancer_pool.primary.monitor == cloudflare_load_balancer_monitor.http.id && cloudflare_load_balancer_pool.secondary.monitor == cloudflare_load_balancer_monitor.http.id
+  }
+
+  assert {
+    error_message = "pools should use the primary and secondary origin addresses"
+    condition     = cloudflare_load_balancer_pool.primary.origins[0].address == "203.0.113.10" && cloudflare_load_balancer_pool.secondary.origins[0].address == "203.0.113.20"
+  }
+
+  assert {
+    error_message = "load balancer should fail over primary -> secondary (steering off, ordered pools)"
+    condition     = cloudflare_load_balancer.app.steering_policy == "off" && length(cloudflare_load_balancer.app.default_pools) == 2 && cloudflare_load_balancer.app.default_pools[0] == cloudflare_load_balancer_pool.primary.id && cloudflare_load_balancer.app.fallback_pool == cloudflare_load_balancer_pool.secondary.id
+  }
+
+  assert {
+    error_message = "primary origin should be enabled by default"
+    condition     = cloudflare_load_balancer_pool.primary.origins[0].enabled
+  }
+}
+
+run "load_balancer_failover_toggle" {
+  command = plan
+
+  variables {
+    primary_origin_enabled = false
+  }
+
+  assert {
+    error_message = "primary_origin_enabled=false should drain the primary origin"
+    condition     = !cloudflare_load_balancer_pool.primary.origins[0].enabled
+  }
+
+  assert {
+    error_message = "secondary origin must stay enabled during failover"
+    condition     = cloudflare_load_balancer_pool.secondary.origins[0].enabled
   }
 }
 
@@ -416,7 +469,7 @@ run "workers_observability" {
 
   assert {
     error_message = "every Worker should have Workers Logs enabled"
-    condition     = alltrue([for w in cloudflare_worker.workers : w.observability.enabled])
+    condition     = alltrue([for w in [cloudflare_worker.api_gateway, cloudflare_worker.products_api, cloudflare_worker.order_processor, cloudflare_worker.admin_panel] : w.observability.enabled])
   }
 }
 
@@ -450,12 +503,26 @@ run "rejects_bad_allowlist_cidr" {
   expect_failures = [var.admin_allowlist_cidr]
 }
 
-run "rejects_placeholder_token" {
+run "rejects_short_admin_password" {
   command = plan
 
   variables {
-    cloudflare_api_token = "your-cloudflare-api-token-here"
+    admin_password = "demo123"
   }
 
-  expect_failures = [var.cloudflare_api_token]
+  expect_failures = [var.admin_password]
+}
+
+run "admin_password_is_a_secret_binding" {
+  command = plan
+
+  assert {
+    error_message = "admin panel should receive ADMIN_PASSWORD as secret_text, not plain_text"
+    condition     = anytrue([for b in cloudflare_worker_version.admin_panel.bindings : b.name == "ADMIN_PASSWORD" && b.type == "secret_text"])
+  }
+
+  assert {
+    error_message = "no Worker should carry a plain_text binding that looks like a credential"
+    condition     = alltrue(flatten([for v in [cloudflare_worker_version.api_gateway, cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] : [for b in v.bindings : !(b.type == "plain_text" && can(regex("(?i)pass|secret|token|key", b.name)))]]))
+  }
 }

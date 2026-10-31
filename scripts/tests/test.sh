@@ -23,6 +23,16 @@ fi
 API="https://api.$ZONE_NAME"
 ADMIN="https://admin.$ZONE_NAME"
 
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+ADMIN_PASSWORD="${TF_VAR_admin_password:-}"
+if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
+	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
+fi
+if [ -z "$ADMIN_PASSWORD" ]; then
+	echo "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+	exit 1
+fi
+
 echo "================================================"
 echo " Cloudflare Demo Platform - Integration Tests"
 echo " Zone: $ZONE_NAME"
@@ -83,7 +93,7 @@ wait_for_order_in_admin() {
 
 	while [ "$attempt" -le "$max_attempts" ]; do
 		local body
-		body=$(http_body -u "admin:demo123" "$ADMIN/api/orders")
+		body=$(http_body -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/orders")
 		if echo "$body" | grep -q "$order_id"; then
 			return 0
 		fi
@@ -320,24 +330,24 @@ status=$(http_status -u "admin:wrongpassword" "$ADMIN/")
 assert_status "admin with wrong password returns 401" 401 "$status"
 
 # Valid auth - dashboard
-req -u "admin:demo123" "$ADMIN/"
+req -u "admin:$ADMIN_PASSWORD" "$ADMIN/"
 assert_status "admin dashboard returns 200" 200 "$(get_status)"
 assert_contains "dashboard returns HTML" "Demo Platform Admin" "$(get_body)"
 
 # Stats
-req -u "admin:demo123" "$ADMIN/api/stats"
+req -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/stats"
 assert_status "admin stats returns 200" 200 "$(get_status)"
 assert_contains "stats returns products count" "products" "$(get_body)"
 assert_contains "stats returns orders count" "orders" "$(get_body)"
 assert_contains "stats returns revenue" "revenue" "$(get_body)"
 
 # Products list
-req -u "admin:demo123" "$ADMIN/api/products"
+req -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/products"
 assert_status "admin products returns 200" 200 "$(get_status)"
 assert_contains "admin products returns array" "products" "$(get_body)"
 
 # Orders list
-req -u "admin:demo123" "$ADMIN/api/orders"
+req -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/orders"
 assert_status "admin orders returns 200" 200 "$(get_status)"
 assert_contains "admin orders returns array" "orders" "$(get_body)"
 

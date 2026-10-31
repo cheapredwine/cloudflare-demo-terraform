@@ -1,10 +1,12 @@
-# Queue consumer (provider v5: first-class resource, replaces the
-# null_resource + wrangler local-exec workaround used on v4)
+# Queue consumer: connects the orders queue to the order-processor Worker
+#
+# Terraform concept: a resource that only links two others (the queue and the
+# Worker). Its references give Terraform the right creation order.
 
 resource "cloudflare_queue_consumer" "orders" {
   account_id  = var.account_id
   queue_id    = cloudflare_queue.orders.queue_id
-  script_name = cloudflare_worker.workers["order_processor"].name
+  script_name = cloudflare_worker.order_processor.name
   type        = "worker"
 
   settings = {

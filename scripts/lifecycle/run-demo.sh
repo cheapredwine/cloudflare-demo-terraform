@@ -55,7 +55,25 @@ check_prerequisites() {
 		echo "Copy terraform.tfvars.example to terraform.tfvars and configure your settings"
 		exit 1
 	fi
+
+	# Terraform, wrangler, and the R2 cleanup all read the token from the
+	# environment; it is never a Terraform variable or a tfvars entry.
+	case "$ACTION" in
+	deploy | destroy | fresh)
+		if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+			echo "❌ CLOUDFLARE_API_TOKEN is not set"
+			echo "   export CLOUDFLARE_API_TOKEN=<token>   (see README: Token permissions)"
+			exit 1
+		fi
+		;;
+	esac
 }
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+ADMIN_PASSWORD="${TF_VAR_admin_password:-}"
+if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
+	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
+fi
 
 get_zone_name() {
 	# Check for --zone override
@@ -141,7 +159,7 @@ reset_data() {
 	echo "Clearing database and cache..."
 
 	# Reset via admin API
-	response=$(curl -s -w "%{http_code}" -u admin:demo123 \
+	response=$(curl -s -w "%{http_code}" -u "admin:$ADMIN_PASSWORD" \
 		-X POST "https://admin.$ZONE_NAME/setup" -o /tmp/reset_response.json)
 
 	if [ "$response" -eq 200 ]; then
@@ -169,13 +187,6 @@ reset_data() {
 destroy_infrastructure() {
 	echo "🧨 Destroying infrastructure..."
 	echo "⚠️  This will delete all data and stop all costs"
-
-	# The R2 destroy-time cleanup reads the token from the environment
-	# (Terraform cannot pass variables into destroy provisioners).
-	if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -f "terraform.tfvars" ]; then
-		CLOUDFLARE_API_TOKEN=$(sed -n 's/^cloudflare_api_token[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
-		export CLOUDFLARE_API_TOKEN
-	fi
 
 	read -p "Are you sure? (y/N): " -n 1 -r
 	echo
@@ -284,7 +295,7 @@ show_success_message() {
 	echo "🔑 Admin Access:"
 	echo "   URL:      https://admin.$ZONE_NAME"
 	echo "   Username: admin"
-	echo "   Password: demo123"
+	echo "   Password: your admin_password (TF_VAR_admin_password or terraform.tfvars)"
 	echo ""
 	show_quick_start
 }

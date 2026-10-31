@@ -1,8 +1,9 @@
-# AI Gateway (provider v5 resource: cloudflare_ai_gateway)
+# AI Gateway
 #
-# Single gateway for the demo. Requests from the products-api Worker's
-# Workers AI binding are routed through it, so caching, retries and
-# logging are applied to model calls. No logpush destination is configured.
+# Terraform concept: a plain resource plus an output. The products-api Worker
+# (workers.tf) gets the gateway's ID through a plain_text binding, so model
+# calls get the gateway's caching, retries and logging.
+# Note: in v5 the gateway's name is its `id`.
 
 resource "cloudflare_ai_gateway" "demo" {
   account_id = var.account_id

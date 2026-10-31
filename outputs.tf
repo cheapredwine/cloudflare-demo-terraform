@@ -1,3 +1,8 @@
+# Outputs
+#
+# Terraform concept: `output` blocks print values after apply and let scripts
+# read them (`terraform output -raw api_gateway_url`); see the state-inspect demo.
+
 output "zone_id" {
   description = "Demo zone ID"
   value       = data.cloudflare_zone.main.id

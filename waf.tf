@@ -1,12 +1,13 @@
-# WAF (provider v5: cloudflare_ruleset with rules as a nested attribute)
+# WAF: managed rules, custom rules, rate limiting, redirects
 #
-# Managed WAF, custom rules, and rate limiting — the showcase the demo
-# previously lacked. All zone-scoped rulesets on the single demo zone.
-# Note the v5 style: `rules = [{ ... }]` (attribute), not `rules { }` (block).
-
-locals {
-  waf_zone_id = data.cloudflare_zone.main.id
-}
+# Terraform concepts:
+#   - One resource, many uses: every block here is `cloudflare_ruleset`. The
+#     `phase` decides what kind of ruleset it is (managed WAF, custom WAF,
+#     rate limiting, redirects). One ruleset per phase per zone.
+#   - Nested attributes: v5 writes `rules = [{ ... }]` (a list of objects),
+#     not repeated `rules { }` blocks as in v4.
+#   - `ref` on every rule: a stable name Terraform uses to match rules across
+#     edits, so changing one rule doesn't recreate the others with new IDs.
 
 # --- Managed WAF ruleset -----------------------------------------------------
 # Managed phase (http_request_firewall_managed): a path-scoped exception for
@@ -15,7 +16,7 @@ locals {
 # waf-managed-rulesets/). Exception rules must precede their execute rules.
 
 resource "cloudflare_ruleset" "waf_managed" {
-  zone_id = local.waf_zone_id
+  zone_id = data.cloudflare_zone.main.id
   name    = "Demo managed WAF"
   kind    = "zone"
   phase   = "http_request_firewall_managed"
@@ -65,7 +66,7 @@ resource "cloudflare_ruleset" "waf_managed" {
 # --- Custom WAF ruleset -------------------------------------------------------
 
 resource "cloudflare_ruleset" "waf_custom" {
-  zone_id = local.waf_zone_id
+  zone_id = data.cloudflare_zone.main.id
   name    = "Demo custom WAF"
   kind    = "zone"
   phase   = "http_request_firewall_custom"
@@ -98,7 +99,7 @@ resource "cloudflare_ruleset" "waf_custom" {
 # --- Rate limiting ruleset ----------------------------------------------------
 
 resource "cloudflare_ruleset" "waf_rate_limit" {
-  zone_id = local.waf_zone_id
+  zone_id = data.cloudflare_zone.main.id
   name    = "Demo rate limiting"
   kind    = "zone"
   phase   = "http_ratelimit"
@@ -125,7 +126,7 @@ resource "cloudflare_ruleset" "waf_rate_limit" {
 # --- Dynamic redirects (kept from the v4 config) ------------------------------
 
 resource "cloudflare_ruleset" "redirects" {
-  zone_id = local.waf_zone_id
+  zone_id = data.cloudflare_zone.main.id
   name    = "Demo redirect rules"
   kind    = "zone"
   phase   = "http_request_dynamic_redirect"

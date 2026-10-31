@@ -1,10 +1,18 @@
-# Cloudflare Demo Platform Configuration
-# Copy this file to terraform.tfvars and update with your values
+# Cloudflare Demo Platform configuration
+# Copy to terraform.tfvars (gitignored) and fill in.
+#
+# The API token is NOT a variable. Export it instead:
+#   export CLOUDFLARE_API_TOKEN=<token>
+# Prefer the env var for the admin password too:
+#   export TF_VAR_admin_password=<at-least-12-chars>
 
-cloudflare_api_token = "your-cloudflare-api-token-here"
-account_id          = "your-cloudflare-account-id-here"
-zone_name           = "demo-platform.example"
+account_id = "your-32-hex-account-id"
+zone_name  = "demo-platform.example"
+
+# admin_password = "set-via-TF_VAR_admin_password-instead"
 
 # Optional overrides (defaults are RFC 5737 documentation addresses)
-# origin_ipv4          = "198.51.100.10"
-# admin_allowlist_cidr = "198.51.100.0/24"
+# origin_ipv4            = "198.51.100.10"
+# secondary_origin_ipv4  = "198.51.100.20"
+# admin_allowlist_cidr   = "198.51.100.0/24"
+# primary_origin_enabled = false   # demo LB failover

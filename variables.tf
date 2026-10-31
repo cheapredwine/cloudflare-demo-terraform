@@ -1,13 +1,12 @@
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token (see README for the required permissions)"
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(trimspace(var.cloudflare_api_token)) >= 20 && !startswith(var.cloudflare_api_token, "your-")
-    error_message = "cloudflare_api_token looks empty, truncated, or still the example placeholder."
-  }
-}
+# Inputs
+#
+# Terraform concepts:
+#   - `variable` blocks are the module's inputs. Set them in terraform.tfvars,
+#     with -var on the command line, or as TF_VAR_<name> env vars.
+#   - `default` makes an input optional.
+#   - `validation` rejects bad input at plan time with a clear message.
+#   - `sensitive = true` hides the value in plan/apply output. (It is still
+#     stored in state, so protect your state file.)
 
 variable "account_id" {
   description = "Cloudflare account ID (32 hex characters)"
@@ -31,7 +30,7 @@ variable "zone_name" {
 }
 
 variable "origin_ipv4" {
-  description = "Origin IPv4 for the root DNS record and the load balancer pool. Default is a documentation address (RFC 5737); set a real origin to see healthy LB checks."
+  description = "Primary origin IPv4 (root DNS record + primary LB pool). Default is a documentation address (RFC 5737); set a real origin to see healthy LB checks."
   type        = string
   default     = "203.0.113.10"
 
@@ -49,5 +48,33 @@ variable "admin_allowlist_cidr" {
   validation {
     condition     = can(cidrnetmask(var.admin_allowlist_cidr))
     error_message = "admin_allowlist_cidr must be an IPv4 CIDR such as 198.51.100.0/24."
+  }
+}
+
+variable "secondary_origin_ipv4" {
+  description = "Secondary origin IPv4 for the passive failover LB pool (RFC 5737 default)"
+  type        = string
+  default     = "203.0.113.20"
+
+  validation {
+    condition     = can(cidrhost("${var.secondary_origin_ipv4}/32", 0))
+    error_message = "secondary_origin_ipv4 must be a valid IPv4 address."
+  }
+}
+
+variable "primary_origin_enabled" {
+  description = "Set false to drain the primary pool and demo load balancer failover"
+  type        = bool
+  default     = true
+}
+
+variable "admin_password" {
+  description = "Admin panel Basic-auth password (user: admin). Stored as a Worker secret; prefer TF_VAR_admin_password over tfvars."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.admin_password) >= 12
+    error_message = "admin_password must be at least 12 characters."
   }
 }
