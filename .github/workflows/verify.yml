@@ -39,7 +39,8 @@ jobs:
         run: make fmt
 
       - name: terraform init (provider download)
-        run: terraform init -backend=false
+        # -lockfile=readonly: fail instead of silently changing the lock file
+        run: terraform init -backend=false -lockfile=readonly
 
       - name: terraform validate
         run: make validate

@@ -45,7 +45,8 @@ verify: lint config-checks fmt validate tftest
 
 lint:
 	shellcheck $$(git ls-files '*.sh')
-	@if command -v shfmt >/dev/null; then shfmt -d $$(git ls-files '*.sh'); else echo "shfmt not installed; skipping format check"; fi
+	@command -v shfmt >/dev/null || { echo "shfmt not installed (brew install shfmt); CI requires it too"; exit 1; }
+	shfmt -d $$(git ls-files '*.sh')
 	@for f in $$(git ls-files 'workers/*.js'); do node --check "$$f" || exit 1; done
 	python3 -m py_compile scripts/empty-r2.py
 	@echo "lint: all checks passed"
@@ -60,8 +61,10 @@ fmt:
 validate:
 	terraform validate
 
+# The invalid token is a seatbelt: tests are plan-only (guarded), but if a
+# mocked apply ever ran, its provisioners couldn't authenticate.
 tftest:
-	terraform test
+	CLOUDFLARE_API_TOKEN=offline-tests-invalid-token terraform test
 
 test:
 	./scripts/tests/test.sh

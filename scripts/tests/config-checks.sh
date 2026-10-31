@@ -21,13 +21,16 @@ grep -q 'concat(\\"https://' waf.tf ||
 # Tests must stay on plan: a mocked apply still runs the local-exec
 # provisioners (wrangler / empty-r2.py), which call the real Cloudflare API.
 # A run block with no `command` defaults to apply, so every run block must
-# say `command = plan` explicitly.
-for t in tests/*.tftest.hcl; do
-	runs=$(grep -cE '^run "' "$t")
-	plans=$(grep -cE '^\s*command\s*=\s*plan\s*$' "$t")
+# say `command = plan`. terraform test reads *.tftest.hcl in the root AND in
+# tests/, so check both.
+shopt -s nullglob
+for t in ./*.tftest.hcl tests/*.tftest.hcl; do
+	runs=$(grep -cE '^\s*run\s+"' "$t" || true)
+	plans=$(grep -cE '^\s*command\s*=\s*plan\s*$' "$t" || true)
 	[ "$runs" -eq "$plans" ] ||
 		fail "$t: $runs run blocks but only $plans say command = plan (the default is apply)"
 done
+shopt -u nullglob
 
 # The provider cannot move cloudflare_workers_script -> cloudflare_worker
 # (plan fails: "Unable to Move Resource State"); see upgrade-from-v4.tf.
@@ -35,38 +38,122 @@ if grep -nE '^\s*from\s*=\s*cloudflare_workers_script\.' ./*.tf; then
 	fail "moved block from cloudflare_workers_script is unsupported by the provider (use removed + import)"
 fi
 
-# The Rules language `matches` (regex) operator needs a Business or Enterprise
-# plan. Use starts_with(), contains, eq or wildcard so the demo runs on any plan.
-if grep -nE '^[^#]*[[:space:]]matches[[:space:]]' ./*.tf; then
-	fail "Rules expression uses 'matches' (Business/Enterprise only)"
+# The Rules language regex operator (`matches`, or its short form `~`) needs
+# a Business or Enterprise plan. Use starts_with(), contains, eq or wildcard.
+if grep -nE '^\s*expression\s*=.*[[:space:]](matches|~)[[:space:]]' ./*.tf; then
+	fail "Rules expression uses 'matches' / '~' (Business/Enterprise only)"
 fi
 
-# Every resource address a script runs terraform against must exist in the
-# config (a demo once targeted cloudflare_workers_script.products_api after
-# that resource was renamed).
+# Every ruleset rule needs a `ref` (stable rule IDs across edits): one
+# uncommented `ref =` per uncommented `action =`, across all .tf files.
+refs=$(cat ./*.tf | grep -cE '^\s*ref\s*=' || true)
+actions=$(cat ./*.tf | grep -cE '^\s*action\s*=' || true)
+[ "$refs" -eq "$actions" ] ||
+	fail "$actions ruleset rules but $refs refs: every rule needs a ref"
+
+# Every resource address that scripts, the Makefile or the README mention
+# must exist in the config (a demo once targeted cloudflare_workers_script
+# .products_api after that resource was renamed). Address-shaped words in the
+# README that are v4 names (upgrade docs) are listed in V4_NAMES.
+V4_NAMES=' cloudflare_record.root cloudflare_record.api cloudflare_record.admin '
 while read -r addr; do
+	case "$V4_NAMES" in *" $addr "*) continue ;; esac
 	type=${addr%%.*}
 	name=${addr#*.}
 	grep -qE "^(resource|data) \"$type\" \"$name\"" ./*.tf ||
-		fail "scripts reference $addr, which no .tf file declares"
-done < <(grep -rhoE 'cloudflare_[a-z0-9_]+\.[a-z0-9_]+' scripts/demos scripts/lifecycle scripts/tests/test.* | sort -u)
+		fail "scripts or docs reference $addr, which no .tf file declares"
+done < <(grep -hoE '(cloudflare_[a-z0-9_]+|terraform_data)\.[a-z_][a-z0-9_]*' \
+	scripts/demos/* scripts/lifecycle/* scripts/tests/test.* Makefile README.md |
+	grep -vE '\.(id|name|queue_id|queue_name|status|filter)$' | sort -u)
+
+# The README's minimum Terraform version must match providers.tf.
+floor=$(sed -nE 's/^ *required_version *= *">= *([0-9]+\.[0-9]+).*/\1/p' providers.tf)
+grep -qF "Terraform >= $floor" README.md ||
+	fail "README doesn't say 'Terraform >= $floor' (providers.tf required_version)"
+
+# admin_allowlist_cidr must stay required: a default that isn't the user's
+# own IP makes the WAF challenge every admin request, scripts included.
+if awk '/^variable "admin_allowlist_cidr"/,/^}/' variables.tf | grep -qE '^\s*default\s*='; then
+	fail "admin_allowlist_cidr must not have a default (users must set their own IP)"
+fi
 
 # No hardcoded admin credentials anywhere in the Worker code.
 if grep -rn 'demo123' workers/; then
 	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"
 fi
 
-# Workers can't read repo files, so the admin panel's POST /setup embeds a
-# copy of db/schema.sql. The two copies must define the same tables.
-python3 - <<'PY' || fail "db/schema.sql and workers/admin-panel.js define different tables"
+# The admin page builds HTML from API data that anyone can write. Every
+# value interpolated into the page script (\${...}) must go through esc().
+if grep -nE '\\\$\{' workers/*.js | grep -vE '\\\$\{esc\('; then
+	fail "workers/: page-script interpolation without esc() (stored XSS risk)"
+fi
+
+# The admin password reaches curl through a 0600 config file (-K), never on
+# the command line (-u admin:$PASSWORD shows up in `ps`).
+if grep -rnE --exclude=config-checks.sh -- '-u "?admin:\$' scripts/; then
+	fail "scripts/: pass the admin password with -K \"\$ADMIN_AUTH\", not -u"
+fi
+
+# Twins: every user-facing .sh script has a .ps1 with the same actions.
+python3 - <<'PY' || fail ".sh / .ps1 twins differ (see above)"
+import pathlib, re, sys
+ok = True
+for sh in sorted(pathlib.Path("scripts").glob("*/*.sh")):
+    if sh.parent.name == "lib" or sh.name == "config-checks.sh":
+        continue
+    ps1 = sh.with_suffix(".ps1")
+    if not ps1.exists():
+        print(f"{sh} has no {ps1.name} twin", file=sys.stderr); ok = False; continue
+    sh_actions = set(re.findall(r'^"?([a-z][a-z-]*)"?\)$', sh.read_text(), re.M))
+    ps_actions = set(re.findall(r'^\s+"([a-z][a-z-]*)" \{', ps1.read_text(), re.M)) - {"help"}
+    if sh_actions != ps_actions:
+        print(f"{sh.name} actions {sorted(sh_actions)} != {ps1.name} actions {sorted(ps_actions)}", file=sys.stderr)
+        ok = False
+# `all` must run every demo (tf-all once skipped two).
+demo = pathlib.Path("scripts/demos/terraform-demo.sh").read_text()
+run_all = demo[demo.index("run_all() {"):].split("\n}\n", 1)[0]
+for action in re.findall(r'^([a-z][a-z-]*)\)$', demo, re.M):
+    if action != "all" and "demo_" + action.replace("-", "_") not in run_all:
+        print(f"terraform-demo.sh: run_all doesn't call demo_{action.replace('-', '_')}", file=sys.stderr)
+        ok = False
+demo_ps = pathlib.Path("scripts/demos/terraform-demo.ps1").read_text()
+run_all_ps = demo_ps[demo_ps.index("function Run-All {"):].split("\n}\n", 1)[0]
+for action in re.findall(r'^\s+"([a-z][a-z-]*)" \{ Check-Prereqs', demo_ps, re.M):
+    fn = "Demo-" + "".join(w.capitalize() for w in action.split("-"))
+    if fn not in run_all_ps:
+        print(f"terraform-demo.ps1: Run-All doesn't call {fn}", file=sys.stderr)
+        ok = False
+sys.exit(0 if ok else 1)
+PY
+
+# Every test name the README's "Find your topic" table points readers to
+# must be a real `run` block.
+python3 - <<'PY' || fail "README names a test that doesn't exist"
 import re, sys
-def tables(text):
+runs = set(re.findall(r'^run "([^"]+)"', open("tests/main.tftest.hcl").read(), re.M))
+named = set()
+for line in open("README.md"):
+    if line.startswith("| **"):
+        named |= set(re.findall(r"`([a-z0-9_]+)`", line.rstrip().rstrip("|").rsplit("|", 1)[-1]))
+missing = sorted(named - runs)
+if missing or not named:
+    print("missing run blocks:", missing or "(no test names found)", file=sys.stderr)
+    sys.exit(1)
+PY
+
+# Workers can't read repo files, so the admin panel's POST /setup embeds a
+# copy of db/schema.sql. Both copies must define the same tables and indexes.
+python3 - <<'PY' || fail "db/schema.sql and workers/admin-panel.js define different schemas"
+import re, sys
+def schema(text):
     out = {}
     for name, body in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\s*\)", text, re.S):
-        out[name] = re.sub(r"\s*\(", "(", " ".join(body.split()))
+        out["table " + name] = re.sub(r"\s*\(", "(", " ".join(body.split()))
+    for stmt in re.findall(r"CREATE (?:UNIQUE )?INDEX[^;`]*", text):
+        out[" ".join(stmt.split())] = ""
     return out
-sql = tables(open("db/schema.sql").read())
-js = tables(open("workers/admin-panel.js").read())
+sql = schema(open("db/schema.sql").read())
+js = schema(open("workers/admin-panel.js").read())
 if not sql or sql != js:
     print("db/schema.sql:", sql, "\nadmin-panel.js:", js, file=sys.stderr)
     sys.exit(1)
