@@ -41,6 +41,12 @@ if grep -nE '^\s*from\s*=\s*cloudflare_workers_script\.' ./*.tf; then
 	fail "moved block from cloudflare_workers_script is unsupported by the provider (use removed + import)"
 fi
 
+# The Rules language `matches` (regex) operator needs a Business or Enterprise
+# plan. Use starts_with(), contains, eq or wildcard so the demo runs on any plan.
+if grep -nE '^[^#]*[[:space:]]matches[[:space:]]' ./*.tf; then
+	fail "Rules expression uses 'matches' (Business/Enterprise only)"
+fi
+
 # No hardcoded admin credentials anywhere in the Worker code.
 if grep -rn 'demo123' workers/; then
 	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"

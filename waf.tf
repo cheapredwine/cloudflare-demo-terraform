@@ -10,7 +10,7 @@
 #     edits, so changing one rule doesn't recreate the others with new IDs.
 
 # --- Managed WAF ruleset -----------------------------------------------------
-# Managed phase (http_request_firewall_managed): a path-scoped exception for
+# Managed phase (http_request_firewall_managed): a host-scoped exception for
 # OWASP 949110, then the Cloudflare Managed Ruleset and OWASP Core Ruleset.
 # IDs are the official published ones (docs /terraform/additional-configurations/
 # waf-managed-rulesets/). Exception rules must precede their execute rules.
@@ -24,11 +24,14 @@ resource "cloudflare_ruleset" "waf_managed" {
   rules = [
     {
       # Exception: skip OWASP 949110 "Inbound Anomaly Score Exceeded"
-      # (rule 6179ae15870a4bb7b2d480d4843b323c) on admin paths, where
-      # admin-panel HTML trips the anomaly scorer.
+      # (rule 6179ae15870a4bb7b2d480d4843b323c) for the admin panel only,
+      # where admin form posts trip the anomaly scorer. Scoped by host: the
+      # admin panel is served at admin.<zone> (all paths), not at /admin.
+      # The other OWASP rules still score these requests; only the final
+      # "block when the score is too high" rule is skipped.
       ref         = "skip_owasp_anomaly_score_admin"
-      description = "Exception: skip OWASP anomaly scoring on admin paths"
-      expression  = "(http.request.uri.path contains \"/admin\")"
+      description = "Exception: skip OWASP anomaly-score block on admin.<zone>"
+      expression  = "(http.host eq \"admin.${var.zone_name}\")"
       action      = "skip"
 
       action_parameters = {
@@ -90,7 +93,7 @@ resource "cloudflare_ruleset" "waf_custom" {
       ref         = "challenge_admin_non_allowlisted"
       enabled     = true
       description = "Admin panel: challenge non-corporate IPs"
-      expression  = "(http.request.uri.path contains \"/admin\" and not ip.src in {${var.admin_allowlist_cidr}})"
+      expression  = "(http.host eq \"admin.${var.zone_name}\" and not ip.src in {${var.admin_allowlist_cidr}})"
       action      = "managed_challenge"
     }
   ]
@@ -106,18 +109,22 @@ resource "cloudflare_ruleset" "waf_rate_limit" {
 
   rules = [
     {
-      # Per-IP limit on the public API: 50 requests / 10s, block for 60s
+      # Per-IP limit on the public API: 50 requests / 10s, then block for 10s.
+      # Chosen to work on every plan: Free allows only a 10s period and 10s
+      # block, and only URI path in the expression. Raise them on paid plans.
       ref         = "rate_limit_api_per_ip"
       enabled     = true
       description = "Per-IP rate limit on /api/*"
-      expression  = "(http.request.uri.path matches \"^/api/\")"
+      expression  = "starts_with(http.request.uri.path, \"/api/\")"
       action      = "block"
 
       ratelimit = {
+        # Counters are kept per data center (cf.colo.id is required by the
+        # API), then per client IP.
         characteristics     = ["cf.colo.id", "ip.src"]
         period              = 10
         requests_per_period = 50
-        mitigation_timeout  = 60
+        mitigation_timeout  = 10
       }
     }
   ]
@@ -151,9 +158,10 @@ resource "cloudflare_ruleset" "redirects" {
       }
     }
     # Rule 2: Redirect HTTP to HTTPS
-    # Uncomment to enforce TLS on all requests. Note: redundant with Cloudflare's
-    # "Always Use HTTPS" zone setting; the min_tls_version zone setting in cdn.tf
-    # already sets the TLS floor. Kept as a demo toggle (original config, 2026-08).
+    # Uncomment to send every plain-HTTP request to HTTPS. Cloudflare's
+    # "Always Use HTTPS" zone setting does the same job. (min_tls_version in
+    # cdn.tf is different: it sets the oldest TLS version allowed on HTTPS
+    # connections, and does nothing for plain HTTP.) Kept as a demo toggle.
     # {
     #   ref         = "force_https"
     #   enabled     = true

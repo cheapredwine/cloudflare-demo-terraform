@@ -232,8 +232,20 @@ run "waf_custom_ruleset" {
   }
 
   assert {
-    error_message = "admin-path rule should reference the corporate IP allowlist"
+    error_message = "admin rule should reference the corporate IP allowlist"
     condition     = anytrue([for r in cloudflare_ruleset.waf_custom.rules : can(regex("203\\.0\\.113\\.0/24", r.expression))])
+  }
+
+  # Regression: these rules once matched the path "/admin", but the admin
+  # panel is served at admin.<zone>/ and never has /admin in its path.
+  assert {
+    error_message = "admin allowlist rule should match the admin panel's hostname"
+    condition     = [for r in cloudflare_ruleset.waf_custom.rules : r.expression if r.ref == "challenge_admin_non_allowlisted"] == ["(http.host eq \"admin.demo-platform.example\" and not ip.src in {203.0.113.0/24})"]
+  }
+
+  assert {
+    error_message = "OWASP 949110 skip should be limited to the admin panel's hostname"
+    condition     = cloudflare_ruleset.waf_managed.rules[0].expression == "(http.host eq \"admin.demo-platform.example\")"
   }
 }
 
@@ -253,6 +265,11 @@ run "waf_rate_limit_ruleset" {
   assert {
     error_message = "rate limit should allow 50 requests per 10s window"
     condition     = cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.requests_per_period == 50 && cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.period == 10
+  }
+
+  assert {
+    error_message = "rate limit should block for 10s, the only duration every plan (including Free) accepts"
+    condition     = cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.mitigation_timeout == 10
   }
 }
 
@@ -283,8 +300,15 @@ run "cache_rules" {
   }
 
   assert {
-    error_message = "cache rules should define 2 rules (bypass API, cache admin)"
-    condition     = length(cloudflare_ruleset.cache_rules.rules) == 2
+    error_message = "cache rules should be bypass_cache_api then cache_static_assets"
+    condition     = [for r in cloudflare_ruleset.cache_rules.rules : r.ref] == ["bypass_cache_api", "cache_static_assets"]
+  }
+
+  # Worker responses (api.<zone>, admin.<zone>) never reach the cache, so a
+  # cache rule only does something on the origin-backed root hostname.
+  assert {
+    error_message = "the caching rule should target the origin-backed root hostname"
+    condition     = startswith(cloudflare_ruleset.cache_rules.rules[1].expression, "(http.host eq \"demo-platform.example\"")
   }
 }
 

@@ -6,6 +6,10 @@
 #   - One resource per setting: v5's `cloudflare_zone_setting` manages exactly
 #     one zone setting, so each setting is its own small, reviewable block.
 #     It replaces v4's all-in-one `cloudflare_zone_settings_override`.
+#
+# Cache rules apply to traffic that goes to an origin: here, the root hostname
+# (dns.tf). They don't cache what api.<zone> and admin.<zone> return, because
+# those responses come from Workers, which run in front of the cache.
 
 # --- Cache rules ---------------------------------------------------------------
 
@@ -17,11 +21,11 @@ resource "cloudflare_ruleset" "cache_rules" {
 
   rules = [
     {
-      # Never cache API traffic — dynamic product/order data
+      # Never cache API paths on the origin: dynamic data
       ref         = "bypass_cache_api"
       enabled     = true
       description = "Bypass cache for /api/*"
-      expression  = "(http.request.uri.path matches \"^/api/\")"
+      expression  = "starts_with(http.request.uri.path, \"/api/\")"
       action      = "set_cache_settings"
 
       action_parameters = {
@@ -29,18 +33,19 @@ resource "cloudflare_ruleset" "cache_rules" {
       }
     },
     {
-      # Cache the admin panel shell for 5 minutes at the edge
-      ref         = "cache_admin_shell"
+      # Cache static files from the origin for 1 day at the edge, whatever
+      # Cache-Control the origin sends
+      ref         = "cache_static_assets"
       enabled     = true
-      description = "Cache admin panel HTML"
-      expression  = "(http.host eq \"admin.${var.zone_name}\" and http.request.uri.path eq \"/\")"
+      description = "Cache static assets on the root hostname for 1 day"
+      expression  = "(http.host eq \"${var.zone_name}\" and http.request.uri.path.extension in {\"css\" \"js\" \"png\" \"jpg\" \"svg\" \"woff2\"})"
       action      = "set_cache_settings"
 
       action_parameters = {
         cache = true
         edge_ttl = {
           mode    = "override_origin"
-          default = 300
+          default = 86400
         }
       }
     }
