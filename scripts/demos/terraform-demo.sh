@@ -27,8 +27,8 @@ Actions:
   plan-file       Save plan to file and apply exact plan
   workspaces      Create staging workspace and switch between them
   refresh-only    Detect drift without making changes
-  taint-replace   Force recreation of a single resource
-  var-override    Plan with overridden zone_name (requires existing zone)
+  taint-replace   Force recreation of a single resource with -replace
+  var-override    Override a variable on the command line (LB failover toggle)
   graph           Generate visual dependency graph
   all             Run all demos sequentially
   help            Show this help
@@ -37,7 +37,6 @@ Examples:
   ./terraform-demo.sh idempotency
   ./terraform-demo.sh drift-detect
   ./terraform-demo.sh all
-  ./terraform-demo.sh var-override staging.example.com
 
 EOF
 }
@@ -170,12 +169,13 @@ demo_targeted() {
 	echo ""
 	press_enter
 
-	echo "Plan changes for only the products API worker:"
-	run_cmd "terraform plan -target=cloudflare_workers_script.products_api"
+	echo "Plan changes for only the products API Worker's code. Terraform also"
+	echo "includes everything that resource depends on (the Worker, D1, KV, ...)."
+	run_cmd "terraform plan -target=cloudflare_worker_version.products_api"
 	press_enter
 
-	echo "Apply only the products API worker:"
-	run_cmd "terraform apply -target=cloudflare_workers_script.products_api -auto-approve"
+	echo "Apply only the products API Worker's code:"
+	run_cmd "terraform apply -target=cloudflare_worker_version.products_api -auto-approve"
 	press_enter
 
 	echo "Targeted operations let you control blast radius during changes."
@@ -223,16 +223,17 @@ demo_workspaces() {
 	run_cmd "terraform workspace list"
 	press_enter
 
-	echo "Plan for staging (separate state, no actual resources yet):"
+	echo "Plan for staging (separate, empty state, so it plans to create everything):"
 	run_cmd "terraform plan"
 	press_enter
 
-	echo "Switch back to default workspace:"
+	echo "Don't apply it: the resource names are fixed (demo-products, ...), so"
+	echo "staging would collide with default. Real projects put"
+	echo "terraform.workspace into names, or use one directory per environment."
+	echo ""
+	echo "Switch back to default and delete the empty staging workspace:"
 	run_cmd "terraform workspace select default"
-	press_enter
-
-	echo "Verify we're back on default:"
-	run_cmd "terraform workspace show"
+	run_cmd "terraform workspace delete staging"
 }
 
 demo_refresh_only() {
@@ -253,47 +254,34 @@ demo_refresh_only() {
 demo_taint_replace() {
 	print_header "DEMO: Taint & Force Replace"
 	echo "Sometimes you need to force recreation of a resource."
-	echo "Terraform 'taint' marks a resource for replacement."
+	echo "-replace=<address> plans a destroy + create for that one resource."
+	echo "(It replaces the older 'terraform taint', which edits state first.)"
 	echo ""
 	press_enter
 
-	echo "Taint the products API worker (mark for replacement):"
-	run_cmd "terraform taint cloudflare_workers_script.products_api"
+	echo "Plan shows the products API Worker version will be replaced:"
+	run_cmd "terraform plan -replace=cloudflare_worker_version.products_api"
 	press_enter
 
-	echo "Plan shows the resource will be replaced:"
-	run_cmd "terraform plan -target=cloudflare_workers_script.products_api"
-	press_enter
-
-	echo "Apply to replace the resource:"
-	run_cmd "terraform apply -target=cloudflare_workers_script.products_api -auto-approve"
-	press_enter
-
-	echo "Resource recreated. Untaint it for demo cleanup:"
-	run_cmd "terraform untaint cloudflare_workers_script.products_api || true"
+	echo "Apply to replace it (uploads the code as a new version):"
+	run_cmd "terraform apply -replace=cloudflare_worker_version.products_api -auto-approve"
 }
 
 demo_var_override() {
 	print_header "DEMO: Variable Overrides"
-	echo "Variables can be set via CLI, environment, or files."
-	echo "Command-line overrides take highest precedence."
+	echo "Variables can be set in terraform.tfvars, as TF_VAR_<name> environment"
+	echo "variables, or with -var. -var wins over the other two."
 	echo ""
+	echo "primary_origin_enabled defaults to true. Override it to drain the"
+	echo "primary load-balancer pool (see load_balancer.tf):"
 	press_enter
 
-	local override_zone="${2:-}"
-	if [ -z "$override_zone" ]; then
-		echo "Usage: ./terraform-demo.sh var-override <existing-zone>"
-		echo "Example: ./terraform-demo.sh var-override staging.example.com"
-		echo "Provide a zone that exists in your Cloudflare account."
-		return
-	fi
-
-	echo "Plan with a different zone (dry run, won't apply):"
-	run_cmd "terraform plan -var=\"zone_name=$override_zone\""
+	echo "Plan with the override (dry run, won't apply):"
+	run_cmd "terraform plan -var=primary_origin_enabled=false"
 	press_enter
 
-	echo "Notice: plan uses the overridden zone name."
-	echo "Original terraform.tfvars value is unchanged."
+	echo "Notice: only the primary pool's origin changes (enabled: true -> false)."
+	echo "Apply it to watch app.$ZONE_NAME fail over to the secondary pool."
 }
 
 demo_graph() {
@@ -384,7 +372,7 @@ taint-replace)
 	;;
 var-override)
 	check_prereqs
-	demo_var_override "$2"
+	demo_var_override
 	;;
 graph)
 	check_prereqs

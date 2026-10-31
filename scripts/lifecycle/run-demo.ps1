@@ -197,7 +197,7 @@ function Show-SuccessMessage {
     Write-Host "🔑 Admin Access:"
     Write-Host "   URL:      https://admin.$script:ZoneName"
     Write-Host "   Username: admin"
-    Write-Host "   Password: your admin_password (TF_VAR_admin_password or terraform.tfvars)"
+    Write-Host "   Password: the one in secrets/admin_password"
     Write-Host ""
     Show-QuickStart
 }
@@ -219,6 +219,11 @@ function Reset-Data {
     Write-Host "🔄 Resetting demo data..."
     if (-not (Test-EndpointsSilent)) {
         Write-Host "❌ Infrastructure not found. Deploy first with: ./run-demo.ps1 deploy"
+        exit 1
+    }
+
+    if (-not $script:AdminPassword) {
+        Write-Host "❌ Put the admin password in secrets/admin_password (or set `$env:TF_VAR_admin_password)"
         exit 1
     }
 
@@ -349,8 +354,9 @@ Write-Host "====================================="
 
 Check-Prerequisites
 
-# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
-$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
+# Admin password comes from TF_VAR_admin_password (filled from
+# secrets/admin_password by scripts/lib/env.ps1).
+$script:AdminPassword = $env:TF_VAR_admin_password
 
 if ((Needs-ZoneName) -and [string]::IsNullOrWhiteSpace($script:ZoneName)) {
     $script:ZoneName = Get-TfvarsValue "zone_name"

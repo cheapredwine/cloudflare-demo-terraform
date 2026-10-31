@@ -97,8 +97,9 @@ if ([string]::IsNullOrWhiteSpace($zoneName)) {
 $api = "https://api.$zoneName"
 $admin = "https://admin.$zoneName"
 
-# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
-$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
+# Admin password comes from TF_VAR_admin_password (filled from
+# secrets/admin_password by scripts/lib/env.ps1).
+$script:AdminPassword = $env:TF_VAR_admin_password
 if ([string]::IsNullOrWhiteSpace($script:AdminPassword)) {
     Write-Host "ERROR: put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
     exit 1

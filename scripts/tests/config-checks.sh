@@ -47,6 +47,16 @@ if grep -nE '^[^#]*[[:space:]]matches[[:space:]]' ./*.tf; then
 	fail "Rules expression uses 'matches' (Business/Enterprise only)"
 fi
 
+# Every resource address a script runs terraform against must exist in the
+# config (a demo once targeted cloudflare_workers_script.products_api after
+# that resource was renamed).
+while read -r addr; do
+	type=${addr%%.*}
+	name=${addr#*.}
+	grep -qE "^(resource|data) \"$type\" \"$name\"" ./*.tf ||
+		fail "scripts reference $addr, which no .tf file declares"
+done < <(grep -rhoE 'cloudflare_[a-z0-9_]+\.[a-z0-9_]+' scripts/demos scripts/lifecycle scripts/tests/test.* | sort -u)
+
 # No hardcoded admin credentials anywhere in the Worker code.
 if grep -rn 'demo123' workers/; then
 	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"
@@ -57,20 +67,38 @@ fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/scripts/lib" "$scratch/secrets"
-cp scripts/lib/env.sh "$scratch/scripts/lib/"
+cp scripts/lib/env.sh scripts/lib/env.ps1 "$scratch/scripts/lib/"
 printf 'file-token\n' >"$scratch/secrets/cloudflare_api_token"
-printf 'file-password\n' >"$scratch/secrets/admin_password"
+# Spaces inside the value must survive; the Windows line ending must not.
+printf 'file pass word\r\n' >"$scratch/secrets/admin_password"
 # printenv runs as a child process, so this also proves the values are EXPORTED
 # (terraform and wrangler only see exported variables).
 # shellcheck disable=SC2016 # single quotes: the inner bash expands these
 loaded=$(env -u CLOUDFLARE_API_TOKEN -u TF_VAR_admin_password bash -c \
 	'source "$1/scripts/lib/env.sh"; echo "$(printenv CLOUDFLARE_API_TOKEN)/$(printenv TF_VAR_admin_password)"' _ "$scratch")
-[ "$loaded" = "file-token/file-password" ] ||
+[ "$loaded" = "file-token/file pass word" ] ||
 	fail "scripts/lib/env.sh did not load secrets/ files"
 # shellcheck disable=SC2016
 kept=$(CLOUDFLARE_API_TOKEN=from-env bash -c \
 	'source "$1/scripts/lib/env.sh"; printenv CLOUDFLARE_API_TOKEN' _ "$scratch")
 [ "$kept" = "from-env" ] ||
 	fail "scripts/lib/env.sh overrode an already-set CLOUDFLARE_API_TOKEN"
+
+# admin_curl_config must escape the characters that are special inside a
+# quoted curl config value (" and \), and keep spaces. Test password only.
+# shellcheck disable=SC2016
+auth_value=$(TF_VAR_admin_password='a "b" \c d' bash -c \
+	'source "$1/scripts/lib/env.sh"; f=$(admin_curl_config); cat "$f"; rm -f "$f"' _ "$scratch")
+[ "$auth_value" = 'user = "admin:a \"b\" \\c d"' ] ||
+	fail "admin_curl_config wrote a badly escaped curl config: $auth_value"
+
+# env.ps1 must read the same files the same way (skipped if pwsh is absent).
+if command -v pwsh >/dev/null; then
+	# shellcheck disable=SC2016
+	ps_loaded=$(env -u CLOUDFLARE_API_TOKEN -u TF_VAR_admin_password SCRATCH="$scratch" pwsh -NoProfile -Command \
+		'. (Join-Path $env:SCRATCH "scripts/lib/env.ps1"); "$env:CLOUDFLARE_API_TOKEN/$env:TF_VAR_admin_password"')
+	[ "$ps_loaded" = "$loaded" ] ||
+		fail "scripts/lib/env.ps1 loads secrets differently from env.sh"
+fi
 
 echo "config-checks: all guards passed"
