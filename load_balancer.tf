@@ -1,11 +1,22 @@
-# Load balancing (provider v5)
+# Load balancing: two pools in active/passive failover
+#
+# Terraform concepts:
+#   - A boolean input variable (`var.primary_origin_enabled`) that changes
+#     live behavior: flip it with -var and the plan shows one attribute change.
+#   - Account-level and zone-level resources referencing each other by ID.
 #
 # Active/passive failover: one health monitor probes two origin pools; the
 # load balancer sends traffic to the first healthy pool in default_pools
 # order (steering_policy = "off"), and to fallback_pool if every pool is down.
 #
 # Demo failover live:  terraform apply -var primary_origin_enabled=false
-# The primary pool drains and app.<zone> is served by the secondary pool.
+# The primary pool's only origin is disabled, so the pool counts as down and
+# app.<zone> is served by the secondary pool. (Disabling is immediate; it
+# doesn't wait for open connections to finish.)
+#
+# With the default RFC 5737 documentation IPs, the health checks fail on
+# BOTH pools, so the failover is only visible once origin_ipv4 and
+# secondary_origin_ipv4 point at real servers with a /health endpoint.
 # Monitors and pools are account-level; the load balancer itself is zone-level.
 
 resource "cloudflare_load_balancer_monitor" "http" {

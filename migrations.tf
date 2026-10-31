@@ -6,6 +6,10 @@
 #     used here only because no resource exists for these two jobs.
 #   - `triggers_replace`: re-run the command when these values change.
 #   - `when = destroy`: run the command before the resource is destroyed.
+#   - Ordering from references alone: no `depends_on` needed. d1_schema uses
+#     the database's name, so it runs after the database exists; r2_cleanup
+#     uses the bucket's name, so on destroy it runs BEFORE the bucket is
+#     deleted (Terraform destroys in reverse dependency order).
 
 # D1 schema application (terraform_data replaces null_resource)
 #
@@ -21,15 +25,13 @@
 # CLOUDFLARE_API_TOKEN env var, the same one the provider uses.
 
 resource "terraform_data" "d1_schema" {
-  depends_on = [cloudflare_d1_database.products, cloudflare_queue_consumer.orders]
-
   triggers_replace = [
     filemd5("${path.module}/db/schema.sql"),
     cloudflare_d1_database.products.id,
   ]
 
   provisioner "local-exec" {
-    command = "wrangler d1 execute demo-products --file=${path.module}/db/schema.sql --remote"
+    command = "wrangler d1 execute ${cloudflare_d1_database.products.name} --file=${path.module}/db/schema.sql --remote"
     # wrangler inherits CLOUDFLARE_API_TOKEN from the calling shell.
     environment = {
       CLOUDFLARE_ACCOUNT_ID = var.account_id
@@ -38,8 +40,6 @@ resource "terraform_data" "d1_schema" {
 }
 
 resource "terraform_data" "r2_cleanup" {
-  depends_on = [cloudflare_r2_bucket.uploads]
-
   triggers_replace = [
     var.account_id,
     cloudflare_r2_bucket.uploads.name,

@@ -35,7 +35,9 @@ variable "origin_ipv4" {
   default     = "203.0.113.10"
 
   validation {
-    condition     = can(cidrhost("${var.origin_ipv4}/32", 0))
+    # The regex rules out IPv6 (cidrhost alone accepts it); cidrhost then
+    # rejects out-of-range octets like 300.1.1.1.
+    condition     = can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.origin_ipv4)) && can(cidrhost("${var.origin_ipv4}/32", 0))
     error_message = "origin_ipv4 must be a valid IPv4 address."
   }
 }
@@ -57,7 +59,9 @@ variable "secondary_origin_ipv4" {
   default     = "203.0.113.20"
 
   validation {
-    condition     = can(cidrhost("${var.secondary_origin_ipv4}/32", 0))
+    # The regex rules out IPv6 (cidrhost alone accepts it); cidrhost then
+    # rejects out-of-range octets like 300.1.1.1.
+    condition     = can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.secondary_origin_ipv4)) && can(cidrhost("${var.secondary_origin_ipv4}/32", 0))
     error_message = "secondary_origin_ipv4 must be a valid IPv4 address."
   }
 }

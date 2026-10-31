@@ -20,10 +20,16 @@ mock_provider "cloudflare" {
   }
 }
 
+# Every input is set here, so the tests don't depend on your local
+# terraform.tfvars (terraform test reads it) or TF_VAR_* environment.
 variables {
-  admin_password = "test-admin-password-not-real"
-  account_id     = "01a7362d546811e79dd32d0171c0d0e6"
-  zone_name      = "demo-platform.example"
+  admin_password         = "test-admin-password-not-real"
+  account_id             = "01a7362d546811e79dd32d0171c0d0e6"
+  zone_name              = "demo-platform.example"
+  origin_ipv4            = "203.0.113.10"
+  secondary_origin_ipv4  = "203.0.113.20"
+  admin_allowlist_cidr   = "203.0.113.0/24"
+  primary_origin_enabled = true
 }
 
 # ---------------------------------------------------------------------------
@@ -34,8 +40,8 @@ run "zone_lookup" {
   command = plan
 
   assert {
-    error_message = "zone data source should resolve the demo zone id"
-    condition     = data.cloudflare_zone.main.id == "023e105f4ecef8ad9ca31a8372d0c353"
+    error_message = "zone lookup should filter by the zone name and the account"
+    condition     = data.cloudflare_zone.main.filter.name == "demo-platform.example" && data.cloudflare_zone.main.filter.account.id == "01a7362d546811e79dd32d0171c0d0e6"
   }
 }
 
@@ -44,7 +50,7 @@ run "dns_records" {
 
   assert {
     error_message = "root A record should point at the demo origin and be proxied"
-    condition     = cloudflare_dns_record.root.type == "A" && cloudflare_dns_record.root.proxied == true
+    condition     = cloudflare_dns_record.root.type == "A" && cloudflare_dns_record.root.content == "203.0.113.10" && cloudflare_dns_record.root.proxied == true
   }
 
   assert {
@@ -232,8 +238,20 @@ run "waf_custom_ruleset" {
   }
 
   assert {
-    error_message = "admin-path rule should reference the corporate IP allowlist"
+    error_message = "admin rule should reference the corporate IP allowlist"
     condition     = anytrue([for r in cloudflare_ruleset.waf_custom.rules : can(regex("203\\.0\\.113\\.0/24", r.expression))])
+  }
+
+  # Regression: these rules once matched the path "/admin", but the admin
+  # panel is served at admin.<zone>/ and never has /admin in its path.
+  assert {
+    error_message = "admin allowlist rule should match the admin panel's hostname"
+    condition     = [for r in cloudflare_ruleset.waf_custom.rules : r.expression if r.ref == "challenge_admin_non_allowlisted"] == ["(http.host eq \"admin.demo-platform.example\" and not ip.src in {203.0.113.0/24})"]
+  }
+
+  assert {
+    error_message = "OWASP 949110 skip should be limited to the admin panel's hostname"
+    condition     = cloudflare_ruleset.waf_managed.rules[0].expression == "(http.host eq \"admin.demo-platform.example\")"
   }
 }
 
@@ -253,6 +271,11 @@ run "waf_rate_limit_ruleset" {
   assert {
     error_message = "rate limit should allow 50 requests per 10s window"
     condition     = cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.requests_per_period == 50 && cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.period == 10
+  }
+
+  assert {
+    error_message = "rate limit should block for 10s, the only duration every plan (including Free) accepts"
+    condition     = cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.mitigation_timeout == 10
   }
 }
 
@@ -283,8 +306,15 @@ run "cache_rules" {
   }
 
   assert {
-    error_message = "cache rules should define 2 rules (bypass API, cache admin)"
-    condition     = length(cloudflare_ruleset.cache_rules.rules) == 2
+    error_message = "cache rules should be bypass_cache_api then cache_static_assets"
+    condition     = [for r in cloudflare_ruleset.cache_rules.rules : r.ref] == ["bypass_cache_api", "cache_static_assets"]
+  }
+
+  # Worker responses (api.<zone>, admin.<zone>) never reach the cache, so a
+  # cache rule only does something on the origin-backed root hostname.
+  assert {
+    error_message = "the caching rule should target the origin-backed root hostname"
+    condition     = startswith(cloudflare_ruleset.cache_rules.rules[1].expression, "(http.host eq \"demo-platform.example\"")
   }
 }
 
@@ -525,4 +555,14 @@ run "admin_password_is_a_secret_binding" {
     error_message = "no Worker should carry a plain_text binding that looks like a credential"
     condition     = alltrue(flatten([for v in [cloudflare_worker_version.api_gateway, cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] : [for b in v.bindings : !(b.type == "plain_text" && can(regex("(?i)pass|secret|token|key", b.name)))]]))
   }
+}
+
+run "rejects_ipv6_origin" {
+  command = plan
+
+  variables {
+    origin_ipv4 = "2001:db8::1"
+  }
+
+  expect_failures = [var.origin_ipv4]
 }

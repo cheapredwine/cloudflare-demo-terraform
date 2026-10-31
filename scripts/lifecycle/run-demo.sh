@@ -73,12 +73,6 @@ check_prerequisites() {
 	esac
 }
 
-# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
-ADMIN_PASSWORD="${TF_VAR_admin_password:-}"
-if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
-	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
-fi
-
 get_zone_name() {
 	# Check for --zone override
 	local args=("$@")
@@ -162,9 +156,16 @@ reset_data() {
 
 	echo "Clearing database and cache..."
 
-	# Reset via admin API
-	response=$(curl -s -w "%{http_code}" -u "admin:$ADMIN_PASSWORD" \
-		-X POST "https://admin.$ZONE_NAME/setup" -o /tmp/reset_response.json)
+	# Reset via admin API (password from secrets/admin_password via lib/env.sh)
+	if [ -z "${TF_VAR_admin_password:-}" ]; then
+		echo "❌ Put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
+		exit 1
+	fi
+	local admin_auth
+	admin_auth=$(admin_curl_config)
+	response=$(curl -s -w "%{http_code}" -K "$admin_auth" \
+		-X POST "https://admin.$ZONE_NAME/setup" -o /dev/null)
+	rm -f "$admin_auth"
 
 	if [ "$response" -eq 200 ]; then
 		echo "✅ Database reset"
@@ -299,7 +300,7 @@ show_success_message() {
 	echo "🔑 Admin Access:"
 	echo "   URL:      https://admin.$ZONE_NAME"
 	echo "   Username: admin"
-	echo "   Password: your admin_password (TF_VAR_admin_password or terraform.tfvars)"
+	echo "   Password: the one in secrets/admin_password"
 	echo ""
 	show_quick_start
 }

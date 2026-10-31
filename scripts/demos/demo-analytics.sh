@@ -24,15 +24,14 @@ fi
 API="https://api.$ZONE_NAME"
 ADMIN="https://admin.$ZONE_NAME"
 
-# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
-ADMIN_PASSWORD="${TF_VAR_admin_password:-}"
-if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
-	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
-fi
-if [ -z "$ADMIN_PASSWORD" ]; then
+# Admin password comes from TF_VAR_admin_password (filled from
+# secrets/admin_password by scripts/lib/env.sh).
+if [ -z "${TF_VAR_admin_password:-}" ]; then
 	echo "ERROR: put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
 	exit 1
 fi
+ADMIN_AUTH=$(admin_curl_config)
+trap 'rm -f "$ADMIN_AUTH"' EXIT
 ROUNDS=${1:-3}
 
 echo "================================================"
@@ -111,10 +110,10 @@ for i in $(seq 1 "$ROUNDS"); do
 
 	# Admin panel
 	printf "  Admin... "
-	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/"
-	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/stats"
-	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/products"
-	q -u "admin:$ADMIN_PASSWORD" "$ADMIN/api/orders"
+	q -K "$ADMIN_AUTH" "$ADMIN/"
+	q -K "$ADMIN_AUTH" "$ADMIN/api/stats"
+	q -K "$ADMIN_AUTH" "$ADMIN/api/products"
+	q -K "$ADMIN_AUTH" "$ADMIN/api/orders"
 	q -u "admin:wrongpassword" "$ADMIN/"
 	echo "done"
 

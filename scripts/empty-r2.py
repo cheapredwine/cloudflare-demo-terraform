@@ -37,21 +37,29 @@ def api(method, path="", body=None):
 
 
 def main():
-    resp = api("GET", "/objects")
-    objects = resp.get("result", []) if isinstance(resp.get("result"), list) else []
-    print(f"Emptying R2 bucket: {bucket_name} ({len(objects)} objects)")
-    failed = False
-    for obj in objects:
-        key = obj["key"]
-        out = api("DELETE", f"/objects/{urllib.parse.quote(key, safe='')}")
-        if out.get("success") is False:
-            failed = True
-            print(f"  FAILED: {key}", file=sys.stderr)
-        else:
-            print(f"  deleted: {key}")
-    if failed:
-        sys.exit(1)
-    print("Done.")
+    # Listing returns one page at a time. Delete that page, then list again
+    # from the start until the bucket is empty; a failed list or delete
+    # exits nonzero so Terraform stops before trying to delete the bucket.
+    total = 0
+    while True:
+        resp = api("GET", "/objects?per_page=1000")
+        if resp.get("success") is not True:
+            print(
+                f"FAILED to list objects in {bucket_name}: {resp.get('errors')}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        objects = resp.get("result") or []
+        if not objects:
+            break
+        for obj in objects:
+            key = obj["key"]
+            out = api("DELETE", f"/objects/{urllib.parse.quote(key, safe='')}")
+            if out.get("success") is not True:
+                print(f"FAILED to delete {key}: {out.get('errors')}", file=sys.stderr)
+                sys.exit(1)
+            total += 1
+    print(f"Emptied R2 bucket {bucket_name} ({total} objects deleted)")
 
 
 if __name__ == "__main__":

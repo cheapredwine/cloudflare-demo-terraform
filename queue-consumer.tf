@@ -9,6 +9,9 @@ resource "cloudflare_queue_consumer" "orders" {
   script_name = cloudflare_worker.order_processor.name
   type        = "worker"
 
+  # Attach the consumer only once the Worker has code with a queue() handler.
+  depends_on = [cloudflare_worker_version.order_processor]
+
   settings = {
     batch_size  = 10
     max_retries = 3

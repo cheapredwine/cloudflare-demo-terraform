@@ -1,5 +1,5 @@
 # Verify workflow for the Cloudflare Demo Platform.
-# Mirrors `make verify` exactly: no secrets required at any step.
+# Runs the `make verify` targets one step at a time: no secrets required.
 
 name: verify
 
@@ -15,30 +15,32 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions pinned to commit SHAs (a tag can be moved; a SHA can't).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: 1.17.1
 
       - name: Install shfmt (so lint matches make verify)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shfmt
 
+      # Each step is one `make verify` target, so CI and local runs can't drift.
       - name: Lint (shellcheck, shfmt, JS/Python syntax)
         run: make lint
 
       - name: Config-content guards
-        run: bash scripts/tests/config-checks.sh
+        run: make config-checks
 
       - name: terraform fmt -check
-        run: terraform fmt -recursive -check
+        run: make fmt
 
       - name: terraform init (provider download)
         run: terraform init -backend=false
 
       - name: terraform validate
-        run: terraform validate
+        run: make validate
 
       - name: terraform test (mocked, offline)
-        run: terraform test
+        run: make tftest

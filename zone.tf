@@ -4,10 +4,11 @@
 # already exists and that Terraform does not manage. Destroy never touches it.
 # Everything zone-scoped references `data.cloudflare_zone.main.id`.
 
-# `account` is read-only on this data source; the zone name is globally unique
-# and `filter` scopes the lookup.
+# `filter` describes which zone to find. Filtering by account as well as name
+# keeps the lookup unambiguous if the token can see more than one account.
 data "cloudflare_zone" "main" {
   filter = {
-    name = var.zone_name
+    name    = var.zone_name
+    account = { id = var.account_id }
   }
 }

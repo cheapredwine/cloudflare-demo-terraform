@@ -1,4 +1,4 @@
-.PHONY: lint help deploy deploy-demo reset destroy fresh smoke test verify fmt validate tftest latency analytics tf-all tf-state tf-drift
+.PHONY: lint config-checks help deploy deploy-demo reset destroy fresh smoke test verify fmt validate tftest latency analytics tf-all tf-state tf-drift
 
 help:
 	@printf "Cloudflare Demo Platform\n\n"
@@ -11,7 +11,7 @@ help:
 	@printf "Validation:\n"
 	@printf "  make verify        lint + config guards + fmt + validate + terraform test (offline)\n"
 	@printf "  make lint          shellcheck/shfmt + JS/Python syntax checks\n"
-	@printf "  make fmt           terraform fmt -recursive -check\n"
+	@printf "  make fmt           terraform fmt -check (git-tracked files only)\n"
 	@printf "  make validate      terraform validate\n"
 	@printf "  make tftest        terraform test (mocked, offline)\n"
 	@printf "  make smoke         Fast endpoint + queue consumer checks\n"
@@ -53,8 +53,9 @@ lint:
 config-checks:
 	bash scripts/tests/config-checks.sh
 
+# Only git-tracked files: your gitignored terraform.tfvars isn't checked.
 fmt:
-	terraform fmt -recursive -check
+	terraform fmt -check $$(git ls-files '*.tf' '*.tfvars' '*.tftest.hcl')
 
 validate:
 	terraform validate

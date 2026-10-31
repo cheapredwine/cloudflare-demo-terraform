@@ -23,8 +23,8 @@ Actions:
   plan-file       Save plan to file and apply exact plan
   workspaces      Create staging workspace and switch between them
   refresh-only    Detect drift without making changes
-  taint-replace   Force recreation of a single resource
-  var-override    Plan with overridden zone_name (requires existing zone)
+  taint-replace   Force recreation of a single resource with -replace
+  var-override    Override a variable on the command line (LB failover toggle)
   graph           Generate visual dependency graph
   all             Run all demos sequentially
   help            Show this help
@@ -33,7 +33,6 @@ Examples:
   ./terraform-demo.ps1 idempotency
   ./terraform-demo.ps1 drift-detect
   ./terraform-demo.ps1 all
-  ./terraform-demo.ps1 var-override staging.example.com
 "@ | Write-Host
 }
 
@@ -125,9 +124,9 @@ function Demo-StateInspect {
 function Demo-Targeted {
     Print-Header "DEMO: Targeted Operations"
     Press-Enter
-    Run-Cmd "terraform plan -target=cloudflare_workers_script.products_api"
+    Run-Cmd "terraform plan -target=cloudflare_worker_version.products_api"
     Press-Enter
-    Run-Cmd "terraform apply -target=cloudflare_workers_script.products_api -auto-approve"
+    Run-Cmd "terraform apply -target=cloudflare_worker_version.products_api -auto-approve"
 }
 
 function Demo-PlanFile {
@@ -152,8 +151,12 @@ function Demo-Workspaces {
     Run-Cmd "terraform workspace list"
     Press-Enter
     Run-Cmd "terraform plan"
+    Write-Host "Don't apply it: the resource names are fixed (demo-products, ...), so"
+    Write-Host "staging would collide with default. Real projects put"
+    Write-Host "terraform.workspace into names, or use one directory per environment."
     Press-Enter
     Run-Cmd "terraform workspace select default"
+    Run-Cmd "terraform workspace delete staging"
 }
 
 function Demo-RefreshOnly {
@@ -165,24 +168,25 @@ function Demo-RefreshOnly {
 function Demo-TaintReplace {
     Print-Header "DEMO: Taint & Force Replace"
     Press-Enter
-    Run-Cmd "terraform taint cloudflare_workers_script.products_api"
+    Write-Host "-replace=<address> plans a destroy + create for that one resource."
+    Write-Host "(It replaces the older 'terraform taint', which edits state first.)"
     Press-Enter
-    Run-Cmd "terraform plan -target=cloudflare_workers_script.products_api"
+    Run-Cmd "terraform plan -replace=cloudflare_worker_version.products_api"
     Press-Enter
-    Run-Cmd "terraform apply -target=cloudflare_workers_script.products_api -auto-approve"
-    Press-Enter
-    Run-Cmd "terraform untaint cloudflare_workers_script.products_api"
+    Run-Cmd "terraform apply -replace=cloudflare_worker_version.products_api -auto-approve"
 }
 
-function Demo-VarOverride([string]$OverrideZone) {
+function Demo-VarOverride {
     Print-Header "DEMO: Variable Overrides"
+    Write-Host "Variables can be set in terraform.tfvars, as TF_VAR_<name> environment"
+    Write-Host "variables, or with -var. -var wins over the other two."
+    Write-Host ""
+    Write-Host "primary_origin_enabled defaults to true. Override it to drain the"
+    Write-Host "primary load-balancer pool (see load_balancer.tf):"
     Press-Enter
-    if ([string]::IsNullOrWhiteSpace($OverrideZone)) {
-        Write-Host "Usage: ./terraform-demo.ps1 var-override <existing-zone>"
-        Write-Host "Example: ./terraform-demo.ps1 var-override staging.example.com"
-        return
-    }
-    Run-Cmd "terraform plan -var=\"zone_name=$OverrideZone\""
+    Run-Cmd "terraform plan -var=primary_origin_enabled=false"
+    Write-Host "Notice: only the primary pool's origin changes (enabled: true -> false)."
+    Write-Host "Apply it to watch app.$script:ZoneName fail over to the secondary pool."
 }
 
 function Demo-Graph {
@@ -211,13 +215,12 @@ function Run-All {
     Demo-Targeted
     Demo-PlanFile
     Demo-RefreshOnly
-    Demo-VarOverride "staging.example.com"
+    Demo-VarOverride
     Demo-Graph
     Demo-Workspaces
 }
 
 $action = if ($args.Count -gt 0) { $args[0] } else { "help" }
-$extra = if ($args.Count -gt 1) { $args[1] } else { "" }
 
 switch ($action) {
     "idempotency" { Check-Prereqs; Demo-Idempotency }
@@ -228,7 +231,7 @@ switch ($action) {
     "workspaces" { Check-Prereqs; Demo-Workspaces }
     "refresh-only" { Check-Prereqs; Demo-RefreshOnly }
     "taint-replace" { Check-Prereqs; Demo-TaintReplace }
-    "var-override" { Check-Prereqs; Demo-VarOverride $extra }
+    "var-override" { Check-Prereqs; Demo-VarOverride }
     "graph" { Check-Prereqs; Demo-Graph }
     "all" { Run-All }
     "help" { Show-Help }

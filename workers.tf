@@ -5,6 +5,8 @@
 #     value and tells Terraform to create the database before the Worker.
 #   - A local value (`local.compatibility_date`) to avoid repeating a setting.
 #   - A sensitive variable flowing into a secret binding (admin panel).
+#   - `depends_on` where the real dependency is on deployed code (see
+#     api_gateway's service binding).
 #
 # Provider v5 splits a Worker into two resources:
 #   cloudflare_worker          the Worker itself (name, logging settings)
@@ -46,9 +48,13 @@ resource "cloudflare_worker_version" "api_gateway" {
     { type = "r2_bucket", name = "UPLOADS", bucket_name = cloudflare_r2_bucket.uploads.name },
     { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
     { type = "queue", name = "ORDER_QUEUE", queue_name = cloudflare_queue.orders.queue_name },
+    # The binding names the products-api Worker; depends_on below makes sure
+    # its code is deployed first, so the gateway never calls an empty Worker.
     { type = "service", name = "PRODUCTS_API", service = cloudflare_worker.products_api.name },
     { type = "plain_text", name = "ZONE_NAME", text = var.zone_name },
   ]
+
+  depends_on = [cloudflare_worker_version.products_api]
 }
 
 # --- Products API: private, reached only through the gateway's service binding -
@@ -132,8 +138,9 @@ resource "cloudflare_worker_version" "admin_panel" {
     { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
     { type = "kv_namespace", name = "SESSIONS", namespace_id = cloudflare_workers_kv_namespace.sessions.id },
     { type = "plain_text", name = "ZONE_NAME", text = var.zone_name },
-    # secret_text: encrypted at rest and never readable back from the API.
-    # var.admin_password is `sensitive`, so Terraform also hides it in plan output.
+    # secret_text: encrypted at Cloudflare and never readable back from the API.
+    # var.admin_password is `sensitive`, so Terraform hides it in plan output,
+    # but terraform.tfstate still holds it in plain text: protect your state.
     { type = "secret_text", name = "ADMIN_PASSWORD", text = var.admin_password },
   ]
 }

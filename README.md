@@ -10,6 +10,10 @@ rate limiting), CDN cache rules, load balancing with failover, Workers with
 every common binding type, and Workers AI through AI Gateway. Built on the
 **Cloudflare Terraform provider v5** (`~> 5.0`).
 
+**Status:** checked offline (`make verify`) and with a real read-only
+`terraform plan` against a live zone. It has **not** been applied end to end
+on provider v5, so the API may still reject something the plan accepted.
+
 ## Find your topic
 
 Everything is one deployable module, but each topic lives in its own file.
@@ -17,15 +21,15 @@ Read that file plus its test to see the whole pattern.
 
 | You care about | File | What it shows | Test (`tests/main.tftest.hcl`) |
 |---|---|---|---|
-| **WAF, managed rules** | [`waf.tf`](./waf.tf) | Cloudflare Managed + OWASP Core rulesets (official IDs), and a path-scoped **skip exception** for OWASP 949110 on `/admin`, placed before the execute rules | `waf_managed_ruleset` |
-| **WAF, custom rules** | [`waf.tf`](./waf.tf) | Block scanner paths, challenge empty user agents, challenge `/admin` outside an IP allowlist | `waf_custom_ruleset` |
-| **Rate limiting** | [`waf.tf`](./waf.tf) | Per-IP + per-colo limit on `/api/*` (50 req / 10 s, 60 s block) | `waf_rate_limit_ruleset` |
+| **WAF, managed rules** | [`waf.tf`](./waf.tf) | Cloudflare Managed + OWASP Core rulesets (official IDs), and a **skip exception** for OWASP 949110 on the admin panel's hostname (`admin.<zone>`), placed before the execute rules | `waf_managed_ruleset` |
+| **WAF, custom rules** | [`waf.tf`](./waf.tf) | Block scanner paths, challenge empty user agents, challenge `admin.<zone>` outside an IP allowlist | `waf_custom_ruleset` |
+| **Rate limiting** | [`waf.tf`](./waf.tf) | Per-IP limit on `/api/*`, counted per data center (50 req / 10 s, 10 s block, which every plan accepts) | `waf_rate_limit_ruleset` |
 | **Redirects** | [`waf.tf`](./waf.tf) | Single redirect, plus a commented "force HTTPS" toggle | `waf_redirects` |
-| **CDN / cache** | [`cdn.tf`](./cdn.tf) | Cache rules (bypass the API, edge-TTL the admin shell) and v5 per-setting `cloudflare_zone_setting` | `cache_rules`, `zone_settings` |
-| **Load balancing** | [`load_balancer.tf`](./load_balancer.tf) | One HTTP monitor, **two pools**, active/passive failover, and a variable that drains the primary live | `load_balancer_stack`, `load_balancer_failover_toggle` |
-| **Workers (v5 pattern)** | [`workers.tf`](./workers.tf), [`routes.tf`](./routes.tf) | `cloudflare_worker` + `cloudflare_worker_version`; KV, R2, D1, Queue, service, AI, plain-text and **secret** bindings; Workers Logs | `worker_bindings`, `worker_routes`, `admin_password_is_a_secret_binding` |
+| **CDN / cache** | [`cdn.tf`](./cdn.tf) | Cache rules for the origin-backed root hostname (bypass `/api/*`, cache static files for a day) and v5 per-setting `cloudflare_zone_setting` | `cache_rules`, `zone_settings` |
+| **Load balancing** | [`load_balancer.tf`](./load_balancer.tf) | One HTTP monitor, **two pools**, active/passive failover, and a variable that takes the primary out of service | `load_balancer_stack`, `load_balancer_failover_toggle` |
+| **Workers (v5 pattern)** | [`workers.tf`](./workers.tf), [`routes.tf`](./routes.tf) | `cloudflare_worker` + `cloudflare_worker_version`; KV, R2, D1, Queue, service, AI, plain-text and **secret** bindings; Workers Logs; `depends_on` so routes wait for deployed code | `worker_bindings`, `worker_routes`, `admin_password_is_a_secret_binding` |
 | **AI Gateway** | [`ai-gateway.tf`](./ai-gateway.tf) | Gateway with caching, retries and logging; a Worker calls Workers AI through it | `ai_gateway` |
-| **Storage + queues** | [`storage.tf`](./storage.tf), [`queue-consumer.tf`](./queue-consumer.tf) | D1, KV, R2, Queue, and a first-class `cloudflare_queue_consumer` | `storage_resources`, `queue_consumer` |
+| **Storage + queues** | [`storage.tf`](./storage.tf), [`queue-consumer.tf`](./queue-consumer.tf) | D1, KV, R2, Queue, and a first-class `cloudflare_queue_consumer` | `storage`, `queue_consumer` |
 | **v4 → v5 upgrade** | [`upgrade-from-v4.tf`](./upgrade-from-v4.tf) | `moved` blocks that rename DNS records in place (verified), and the `removed` + `import` route for Workers, which can't be moved across types | — |
 
 Every ruleset rule sets a `ref`, so rule IDs stay stable when you edit a
@@ -105,7 +109,7 @@ flowchart LR
 | Scope | Permission |
 |---|---|
 | Account | Workers Scripts, Workers KV Storage, Workers R2 Storage, D1, Queues, AI Gateway, Load Balancing: Monitors and Pools — all **Edit** |
-| Zone | Zone Settings, DNS, Workers Routes, Cache Rules, Zone WAF, Load Balancers — all **Edit** |
+| Zone | Zone Settings, DNS, Workers Routes, Cache Rules, Zone WAF, Single Redirect, Load Balancers — all **Edit**; Zone **Read** (the zone lookup) |
 
 ### Configure
 
@@ -126,7 +130,7 @@ yourself, export the two variables first (see [`secrets/README.md`](./secrets/RE
 ### Verify, deploy, tear down
 
 ```bash
-make verify    # offline: lint, config guards, fmt, validate, 25 mocked tests
+make verify    # offline: lint, config guards, fmt, validate, 26 mocked tests
 make deploy    # terraform apply + smoke checks
 make test      # integration suite against the deployed platform
 make destroy   # empties R2, then destroys everything
@@ -145,12 +149,12 @@ Workers dashboards. The admin panel is at `https://admin.<zone>` (user
 ```bash
 curl -i https://api.<zone>/.env                                       # custom rule: 403
 curl -i -A "" https://api.<zone>/api/products                         # empty UA: challenged
-for i in $(seq 60); do curl -s -o /dev/null -w "%{http_code} " https://api.<zone>/api/products; done   # 429s after 50
+seq 80 | xargs -P 20 -I{} curl -s -o /dev/null -w "%{http_code} " https://api.<zone>/api/products   # 429s once past 50 in 10 s
 ```
 
 **Load balancer failover:**
 ```bash
-terraform apply -var primary_origin_enabled=false   # drain primary; app.<zone> moves to secondary
+terraform apply -var primary_origin_enabled=false   # disable the primary origin; app.<zone> moves to secondary
 terraform apply                                     # restore
 ```
 The default origins are RFC 5737 documentation addresses, so the monitor
@@ -218,12 +222,12 @@ This is a demo, and a few choices are deliberate shortcuts:
 
 ## Testing
 
-- **`make verify`** (offline, no credentials, mirrored in CI by
-  [`.github/workflows/verify.yml`](./.github/workflows/verify.yml)) runs four checks:
+- **`make verify`** (offline, no credentials; CI in
+  [`.github/workflows/verify.yml`](./.github/workflows/verify.yml) runs the same make targets) runs four checks:
   - shellcheck, shfmt, and JS/Python syntax checks.
-  - Config guards in `scripts/tests/config-checks.sh`: official WAF IDs, the commented HTTPS toggle, no hardcoded admin password, tests stay on `plan`.
-  - `terraform fmt` and `terraform validate`.
-  - **25 mocked `terraform test` cases**, including negative tests that prove each input validation fires.
+  - Config guards in `scripts/tests/config-checks.sh`, for things `terraform test` can't express: the commented HTTPS toggle stays, no `matches` operator (Business+ only), every test `run` says `command = plan`, scripts only use resource addresses that exist, the secrets loaders behave the same, and the two schema copies match.
+  - `terraform fmt` (tracked files only) and `terraform validate`.
+  - **26 mocked `terraform test` cases**, including negative tests that prove each input validation fires.
 - **`make test` / `make smoke`** run integration checks against a deployed
   platform (`scripts/tests/test.sh`, `.ps1`).
 
@@ -246,8 +250,13 @@ the API accepts it, for example whether a rule expression parses. Only a real
 ## Cost
 
 The zone is pre-existing. A demo session stays well inside the Workers, D1,
-KV, R2 and Queues free tiers. Load balancing and some WAF features depend on
-your plan.
+KV, R2 and Queues free tiers. Some features depend on the zone's plan:
+
+- **Managed WAF** (Cloudflare Managed and OWASP rulesets): Pro or higher.
+- **Load balancing**: a paid add-on on any plan.
+- **Rate limiting**, custom rules, cache rules and redirects work on Free.
+  The rate-limit rule uses the Free limits (10 s period and block, path-only
+  expression); raise them on paid plans.
 
 ## License
 
