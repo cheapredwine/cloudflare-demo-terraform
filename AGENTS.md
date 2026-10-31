@@ -229,7 +229,7 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 
 - Migrated to Cloudflare provider v5 (v5.28.1), Terraform CLI 1.17
 - `make verify` = config guards + fmt + validate + 16 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
-- Rule 2 (Force HTTPS) demo toggle restored as a comment in waf.tf redirects; OWASP 949110 override guidance in comments (full 32-hex rule ID must be resolved via API — ends in ...843b323c)
+- Rule 2 (Force HTTPS) demo toggle restored as a comment in waf.tf redirects; managed WAF uses the official published IDs — OWASP 949110 exception (rule 6179ae...843b323c) + OWASP Core Ruleset 4814384a... + CF Managed Ruleset efb7b8c9..., in the http_request_firewall_managed phase
 - New: managed/custom/rate-limit WAF, cache rules + zone settings, load balancer, AI Gateway + Workers AI summary endpoint
 - First real `terraform apply` must show the moved blocks as renames (DNS records + 4 workers); verify with `terraform plan` before applying
 - Zone: jsherron.com

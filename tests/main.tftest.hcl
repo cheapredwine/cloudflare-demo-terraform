@@ -163,13 +163,43 @@ run "waf_managed_ruleset" {
   command = plan
 
   assert {
-    error_message = "managed WAF should execute the Cloudflare Managed Ruleset"
-    condition     = cloudflare_ruleset.waf_managed.phase == "http_config_settings"
+    error_message = "managed WAF should live in the managed firewall phase"
+    condition     = cloudflare_ruleset.waf_managed.phase == "http_request_firewall_managed"
   }
 
   assert {
-    error_message = "managed WAF ruleset should carry exactly one execute rule"
-    condition     = length(cloudflare_ruleset.waf_managed.rules) == 1
+    error_message = "managed WAF should carry 3 rules (exception + 2 execute)"
+    condition     = length(cloudflare_ruleset.waf_managed.rules) == 3
+  }
+
+  assert {
+    error_message = "949110 exception: skip map should have exactly one ruleset key"
+    condition     = length(keys(cloudflare_ruleset.waf_managed.rules[0].action_parameters.rules)) == 1
+  }
+
+  assert {
+    error_message = "949110 exception: the OWASP ruleset key must be present"
+    condition     = contains(keys(cloudflare_ruleset.waf_managed.rules[0].action_parameters.rules), "4814384a9e5d4991b9815dcfc25d2f1f")
+  }
+
+  assert {
+    error_message = "949110 exception: rule ID must be the official 32-hex (...843b323c)"
+    condition     = can(regex("6179ae15870a4bb7b2d480d4843b323c", jsonencode(cloudflare_ruleset.waf_managed.rules[0].action_parameters.rules)))
+  }
+
+  assert {
+    error_message = "exception (skip) must precede the execute rules"
+    condition     = cloudflare_ruleset.waf_managed.rules[0].action == "skip" && alltrue([for i, r in cloudflare_ruleset.waf_managed.rules : r.action == "execute" if i > 0])
+  }
+
+  assert {
+    error_message = "Cloudflare Managed Ruleset should be executed with its official ID"
+    condition     = cloudflare_ruleset.waf_managed.rules[1].action_parameters.id == "efb7b8c949ac4650a09736fc376e9aee"
+  }
+
+  assert {
+    error_message = "OWASP Core Ruleset should be executed with its official ID"
+    condition     = cloudflare_ruleset.waf_managed.rules[2].action_parameters.id == "4814384a9e5d4991b9815dcfc25d2f1f"
   }
 }
 

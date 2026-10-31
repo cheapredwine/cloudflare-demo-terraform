@@ -9,43 +9,55 @@ locals {
 }
 
 # --- Managed WAF ruleset -----------------------------------------------------
-# Managed Ruleset with one exception (Inbound Anomaly Score suppression for
-# admin paths), demonstrating how to tune rules without disabling them.
+# Managed phase (http_request_firewall_managed): a path-scoped exception for
+# OWASP 949110, then the Cloudflare Managed Ruleset and OWASP Core Ruleset.
+# IDs are the official published ones (docs /terraform/additional-configurations/
+# waf-managed-rulesets/). Exception rules must precede their execute rules.
 
 resource "cloudflare_ruleset" "waf_managed" {
   zone_id = local.waf_zone_id
   name    = "Demo managed WAF"
   kind    = "zone"
-  phase   = "http_config_settings"
+  phase   = "http_request_firewall_managed"
 
   rules = [
     {
-      enabled     = true
-      description = "Managed WAF: Cloudflare Managed Ruleset executed"
+      # Exception: skip OWASP 949110 "Inbound Anomaly Score Exceeded"
+      # (rule 6179ae15870a4bb7b2d480d4843b323c) on admin paths, where
+      # admin-panel HTML trips the anomaly scorer.
+      ref         = "skip_owasp_anomaly_score_admin"
+      description = "Exception: skip OWASP anomaly scoring on admin paths"
+      expression  = "(http.request.uri.path contains \"/admin\")"
+      action      = "skip"
+
+      action_parameters = {
+        rules = {
+          # OWASP Core Ruleset -> rule 949110
+          "4814384a9e5d4991b9815dcfc25d2f1f" = ["6179ae15870a4bb7b2d480d4843b323c"]
+        }
+      }
+    },
+    {
+      # Execute Cloudflare Managed Ruleset
+      ref         = "execute_cloudflare_managed_ruleset"
+      description = "Execute Cloudflare Managed Ruleset"
+      expression  = "true"
       action      = "execute"
 
       action_parameters = {
-        # Cloudflare Managed Ruleset — executed as-is for this demo zone.
-        #
-        # Example override (disabled): skip OWASP rule 949110
-        # ("Inbound Anomaly Score Exceeded") for admin paths. Managed-rule IDs
-        # are 32-char hex; the OWASP 949110 rule ID ends in ...843b323c. Resolve
-        # the full ID once via the API, then uncomment:
-        #   GET /zones/{zone_id}/rulesets/phases/http_config_settings/entrypoint
-        # and set rules[].id to the hex ID ending in 843b323c.
-        #
-        # overrides = {
-        #   rules = [
-        #     {
-        #       id      = "<32-char-hex-rule-id-ending-in-843b323c>"
-        #       enabled = false
-        #     }
-        #   ]
-        # }
-        id = "efb7b899d074703f805dec1c688a04ef"
+        id = "efb7b8c949ac4650a09736fc376e9aee"
       }
+    },
+    {
+      # Execute Cloudflare OWASP Core Ruleset (default PL1, Medium threshold)
+      ref         = "execute_cloudflare_owasp_core_ruleset"
+      description = "Execute Cloudflare OWASP Core Ruleset"
+      expression  = "true"
+      action      = "execute"
 
-      expression = "(http.request.method in {\"GET\" \"POST\" \"PUT\" \"DELETE\" \"OPTIONS\"})"
+      action_parameters = {
+        id = "4814384a9e5d4991b9815dcfc25d2f1f"
+      }
     }
   ]
 }
