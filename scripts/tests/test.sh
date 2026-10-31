@@ -66,7 +66,7 @@ assert_contains() {
 
 RESP_BODY=$(mktemp)
 RESP_STATUS=$(mktemp)
-trap "rm -f $RESP_BODY $RESP_STATUS" EXIT
+trap 'rm -f "$RESP_BODY" "$RESP_STATUS"' EXIT
 
 http_status() {
 	curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$@"

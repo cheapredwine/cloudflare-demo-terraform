@@ -8,13 +8,13 @@ set -euo pipefail
 ZONE_NAME=""
 ACCOUNT_ID=""
 if [ -f "terraform.tfvars" ]; then
-    ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
-    ACCOUNT_ID=$(grep 'account_id' terraform.tfvars | cut -d'"' -f2)
+	ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
+	ACCOUNT_ID=$(grep 'account_id' terraform.tfvars | cut -d'"' -f2)
 fi
 
 if [ -z "$ZONE_NAME" ]; then
-    echo "ERROR: zone_name not found in terraform.tfvars"
-    exit 1
+	echo "ERROR: zone_name not found in terraform.tfvars"
+	exit 1
 fi
 
 API="https://api.$ZONE_NAME"
@@ -46,65 +46,65 @@ echo ""
 
 q() { curl -s -o /dev/null "$@"; }
 
-for i in $(seq 1 $ROUNDS); do
-    echo "Round $i/$ROUNDS"
+for i in $(seq 1 "$ROUNDS"); do
+	echo "Round $i/$ROUNDS"
 
-    # Auth flow
-    printf "  Auth... "
-    SESSION=$(curl -s -X POST "$API/api/auth/login" \
-        -H "Content-Type: application/json" \
-        -d '{"email":"demo@example.com","password":"demo"}' \
-        | grep -o '"session_id":"[^"]*"' | cut -d'"' -f4)
-    q "$API/api/auth/me" -H "Authorization: Bearer $SESSION"
-    q "$API/api/auth/me" -H "Authorization: Bearer invalid"
-    echo "done"
+	# Auth flow
+	printf "  Auth... "
+	SESSION=$(curl -s -X POST "$API/api/auth/login" \
+		-H "Content-Type: application/json" \
+		-d '{"email":"demo@example.com","password":"demo"}' |
+		grep -o '"session_id":"[^"]*"' | cut -d'"' -f4)
+	q "$API/api/auth/me" -H "Authorization: Bearer $SESSION"
+	q "$API/api/auth/me" -H "Authorization: Bearer invalid"
+	echo "done"
 
-    # Products — mix of hits and misses
-    printf "  Products (MISS then HITs)... "
-    q -X POST "$API/api/products" -H "Content-Type: application/json" \
-        -d "{\"name\":\"Demo Product $i\",\"price\":$((i * 10)).99,\"stock\":$((i * 5))}"
-    q "$API/api/products"
-    q "$API/api/products"
-    q "$API/api/products"
-    q "$API/api/products/1"
-    q "$API/api/products/2"
-    echo "done"
+	# Products — mix of hits and misses
+	printf "  Products (MISS then HITs)... "
+	q -X POST "$API/api/products" -H "Content-Type: application/json" \
+		-d "{\"name\":\"Demo Product $i\",\"price\":$((i * 10)).99,\"stock\":$((i * 5))}"
+	q "$API/api/products"
+	q "$API/api/products"
+	q "$API/api/products"
+	q "$API/api/products/1"
+	q "$API/api/products/2"
+	echo "done"
 
-    # Orders
-    printf "  Orders... "
-    q -X POST "$API/api/orders" \
-        -H "Content-Type: application/json" \
-        -d "{\"customer_id\":\"demo-$i\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}"
-    q -X POST "$API/api/orders" \
-        -H "Content-Type: application/json" \
-        -d '{"customer_id":"missing-items"}'
-    echo "done"
+	# Orders
+	printf "  Orders... "
+	q -X POST "$API/api/orders" \
+		-H "Content-Type: application/json" \
+		-d "{\"customer_id\":\"demo-$i\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}"
+	q -X POST "$API/api/orders" \
+		-H "Content-Type: application/json" \
+		-d '{"customer_id":"missing-items"}'
+	echo "done"
 
-    # Upload
-    printf "  Upload... "
-    TMPFILE=$(mktemp /tmp/demo-upload.XXXXXX.txt)
-    echo "demo file $i $(date)" > "$TMPFILE"
-    q -X POST "$API/api/upload" -F "file=@$TMPFILE"
-    q -X POST "$API/api/upload"
-    rm "$TMPFILE"
-    echo "done"
+	# Upload
+	printf "  Upload... "
+	TMPFILE=$(mktemp /tmp/demo-upload.XXXXXX.txt)
+	echo "demo file $i $(date)" >"$TMPFILE"
+	q -X POST "$API/api/upload" -F "file=@$TMPFILE"
+	q -X POST "$API/api/upload"
+	rm "$TMPFILE"
+	echo "done"
 
-    # 404s (shows error rate in analytics)
-    printf "  404s... "
-    q "$API/api/nonexistent"
-    q "$API/api/nonexistent2"
-    echo "done"
+	# 404s (shows error rate in analytics)
+	printf "  404s... "
+	q "$API/api/nonexistent"
+	q "$API/api/nonexistent2"
+	echo "done"
 
-    # Admin panel
-    printf "  Admin... "
-    q -u "admin:demo123" "$ADMIN/"
-    q -u "admin:demo123" "$ADMIN/api/stats"
-    q -u "admin:demo123" "$ADMIN/api/products"
-    q -u "admin:demo123" "$ADMIN/api/orders"
-    q -u "admin:wrongpassword" "$ADMIN/"
-    echo "done"
+	# Admin panel
+	printf "  Admin... "
+	q -u "admin:demo123" "$ADMIN/"
+	q -u "admin:demo123" "$ADMIN/api/stats"
+	q -u "admin:demo123" "$ADMIN/api/products"
+	q -u "admin:demo123" "$ADMIN/api/orders"
+	q -u "admin:wrongpassword" "$ADMIN/"
+	echo "done"
 
-    echo ""
+	echo ""
 done
 
 echo "================================================"

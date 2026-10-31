@@ -10,8 +10,8 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.request
 import urllib.parse
+import urllib.request
 
 account_id = os.environ["CF_ACCOUNT_ID"]
 bucket_name = os.environ["CF_BUCKET"]
@@ -32,7 +32,7 @@ def api(method, path="", body=None):
     except urllib.error.HTTPError as e:
         try:
             return json.loads(e.read())
-        except Exception:
+        except (ValueError, OSError):
             return {}
 
 

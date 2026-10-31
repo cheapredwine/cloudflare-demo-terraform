@@ -113,9 +113,7 @@ echo ""
 deploy_infrastructure() {
 	echo "🏗️  Deploying infrastructure..."
 	terraform init
-	terraform apply -auto-approve
-
-	if [ $? -ne 0 ]; then
+	if ! terraform apply -auto-approve; then
 		echo "❌ Terraform deployment failed"
 		exit 1
 	fi
@@ -187,9 +185,7 @@ destroy_infrastructure() {
 		exit 0
 	fi
 
-	terraform destroy -auto-approve
-
-	if [ $? -eq 0 ]; then
+	if terraform destroy -auto-approve; then
 		echo "✅ Infrastructure destroyed successfully"
 		echo "💰 All costs stopped"
 	else

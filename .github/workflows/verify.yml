@@ -22,6 +22,9 @@ jobs:
         with:
           terraform_version: 1.17.1
 
+      - name: Lint (shellcheck, JS/Python syntax)
+        run: make lint
+
       - name: Config-content guards
         run: bash scripts/tests/config-checks.sh
 

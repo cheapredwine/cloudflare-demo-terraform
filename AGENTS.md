@@ -228,7 +228,7 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 ## Next Session Notes
 
 - Migrated to Cloudflare provider v5 (v5.28.1), Terraform CLI 1.17
-- `make verify` = config guards + fmt + validate + 23 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
+- `make verify` = lint (shellcheck, shfmt, JS/Python syntax) + config guards + fmt + validate + 23 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
 - Every ruleset rule carries a `ref` (stable rule IDs across edits; tested). Add one to any new rule.
 - Inputs are validated (`variables.tf`); `origin_ipv4` and `admin_allowlist_cidr` default to RFC 5737 documentation addresses. Worker compatibility date is the single `local.worker_compatibility_date`; Workers Logs (`observability`) is on for every Worker.
 - Rule 2 (Force HTTPS) demo toggle restored as a comment in waf.tf redirects; managed WAF uses the official published IDs — OWASP 949110 exception (rule 6179ae...843b323c) + OWASP Core Ruleset 4814384a... + CF Managed Ruleset efb7b8c9..., in the http_request_firewall_managed phase
