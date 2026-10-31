@@ -4,3 +4,7 @@
 cloudflare_api_token = "your-cloudflare-api-token-here"
 account_id          = "your-cloudflare-account-id-here"
 zone_name           = "demo-platform.example"
+
+# Optional overrides (defaults are RFC 5737 documentation addresses)
+# origin_ipv4          = "198.51.100.10"
+# admin_allowlist_cidr = "198.51.100.0/24"

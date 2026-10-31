@@ -98,7 +98,7 @@ See `docs/architecture.png` for the full visual diagram.
 | Resource | Details |
 |----------|---------|
 | Zone | `jsherron.com` — referenced as data source (pre-existing) |
-| DNS A | `jsherron.com → 203.0.113.10` (proxied) |
+| DNS A | `<zone> → var.origin_ipv4` (proxied; default 203.0.113.10) |
 | DNS AAAA | `api.jsherron.com → 100::` (proxied, Anycast) |
 | DNS AAAA | `admin.jsherron.com → 100::` (proxied, Anycast) |
 | Cache Rules | `/api/products*` 5min edge TTL; previously Page Rules |

@@ -365,3 +365,97 @@ run "outputs" {
     condition     = output.load_balancer_hostname == "app.demo-platform.example"
   }
 }
+
+# ---------------------------------------------------------------------------
+# Variable overrides + validation (negative tests)
+# ---------------------------------------------------------------------------
+
+run "origin_and_allowlist_overrides" {
+  command = plan
+
+  variables {
+    origin_ipv4          = "198.51.100.7"
+    admin_allowlist_cidr = "198.51.100.0/24"
+  }
+
+  assert {
+    error_message = "root DNS record should follow origin_ipv4"
+    condition     = cloudflare_dns_record.root.content == "198.51.100.7"
+  }
+
+  assert {
+    error_message = "LB pool origin should follow origin_ipv4"
+    condition     = cloudflare_load_balancer_pool.primary.origins[0].address == "198.51.100.7"
+  }
+
+  assert {
+    error_message = "admin WAF rule should follow admin_allowlist_cidr"
+    condition     = anytrue([for r in cloudflare_ruleset.waf_custom.rules : strcontains(r.expression, "198.51.100.0/24")])
+  }
+}
+
+run "rules_have_stable_refs" {
+  command = plan
+
+  assert {
+    error_message = "every ruleset rule should set ref so rule IDs survive edits"
+    condition = alltrue([
+      for r in concat(
+        cloudflare_ruleset.waf_managed.rules,
+        cloudflare_ruleset.waf_custom.rules,
+        cloudflare_ruleset.waf_rate_limit.rules,
+        cloudflare_ruleset.redirects.rules,
+        cloudflare_ruleset.cache_rules.rules,
+      ) : r.ref != null && r.ref != ""
+    ])
+  }
+}
+
+run "workers_observability" {
+  command = plan
+
+  assert {
+    error_message = "every Worker should have Workers Logs enabled"
+    condition     = alltrue([for w in cloudflare_worker.workers : w.observability.enabled])
+  }
+}
+
+run "rejects_bad_account_id" {
+  command = plan
+
+  variables {
+    account_id = "not-an-account-id"
+  }
+
+  expect_failures = [var.account_id]
+}
+
+run "rejects_bad_origin_ip" {
+  command = plan
+
+  variables {
+    origin_ipv4 = "999.1.1.1"
+  }
+
+  expect_failures = [var.origin_ipv4]
+}
+
+run "rejects_bad_allowlist_cidr" {
+  command = plan
+
+  variables {
+    admin_allowlist_cidr = "203.0.113.0"
+  }
+
+  expect_failures = [var.admin_allowlist_cidr]
+}
+
+run "rejects_placeholder_token" {
+  command = plan
+
+  variables {
+    cloudflare_api_token = "your-cloudflare-api-token-here"
+  }
+
+  expect_failures = [var.cloudflare_api_token]
+}

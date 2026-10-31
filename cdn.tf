@@ -15,6 +15,7 @@ resource "cloudflare_ruleset" "cache_rules" {
   rules = [
     {
       # Never cache API traffic — dynamic product/order data
+      ref         = "bypass_cache_api"
       enabled     = true
       description = "Bypass cache for /api/*"
       expression  = "(http.request.uri.path matches \"^/api/\")"
@@ -26,6 +27,7 @@ resource "cloudflare_ruleset" "cache_rules" {
     },
     {
       # Cache the admin panel shell for 5 minutes at the edge
+      ref         = "cache_admin_shell"
       enabled     = true
       description = "Cache admin panel HTML"
       expression  = "(http.host eq \"admin.${var.zone_name}\" and http.request.uri.path eq \"/\")"

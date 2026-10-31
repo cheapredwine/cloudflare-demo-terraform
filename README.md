@@ -268,7 +268,7 @@ variable "stripe_secret_key" {
 
 Two layers:
 
-- **`make verify`** — config-content guards, `terraform fmt -check`, `terraform validate`, and `terraform test` (16 mocked test cases in `tests/main.tftest.hcl` — with tightened asserts for the redirects rule count, admin-IP expression, and config-content guards — covering DNS, storage, workers/bindings, routes, queue consumer, WAF, cache, zone settings, load balancing, AI Gateway, and outputs). No credentials needed. CI runs the identical chain via [.github/workflows/verify.yml](./.github/workflows/verify.yml) on push/PR.
+- **`make verify`** — config-content guards, `terraform fmt -check`, `terraform validate`, and `terraform test` (23 mocked test cases in `tests/main.tftest.hcl` covering DNS, storage, workers/bindings/observability, routes, queue consumer, WAF, stable rule `ref`s, cache, zone settings, load balancing, AI Gateway, outputs, variable overrides, and negative tests proving each input validation fires). No credentials needed. CI runs the identical chain via [.github/workflows/verify.yml](./.github/workflows/verify.yml) on push/PR.
 - **`make test`** — the deployed-platform integration suite (`scripts/tests/test.sh`), including the AI summary endpoint check.
 
 ### Scaling & Performance

@@ -26,7 +26,7 @@ resource "cloudflare_load_balancer_pool" "primary" {
   origins = [
     {
       name    = "origin-primary"
-      address = "203.0.113.10"
+      address = var.origin_ipv4
       enabled = true
     }
   ]
@@ -48,5 +48,6 @@ resource "cloudflare_load_balancer" "app" {
 }
 
 output "load_balancer_hostname" {
-  value = cloudflare_load_balancer.app.name
+  description = "Hostname served by the demo load balancer"
+  value       = cloudflare_load_balancer.app.name
 }

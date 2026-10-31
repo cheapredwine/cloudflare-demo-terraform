@@ -5,6 +5,9 @@
 # version on apply, replacing the v4 script-upload model.
 
 locals {
+  # One compatibility date for every Worker; bump deliberately and re-test.
+  worker_compatibility_date = "2025-09-01"
+
   worker_names = {
     api_gateway     = "demo-api-gateway"
     products_api    = "demo-products-api"
@@ -15,7 +18,7 @@ locals {
   workers = {
     api_gateway = {
       file               = "workers/api-gateway.js"
-      compatibility_date = "2025-09-01"
+      compatibility_date = local.worker_compatibility_date
       bindings = [
         { type = "kv_namespace", name = "SESSIONS", namespace_id = cloudflare_workers_kv_namespace.sessions.id },
         { type = "r2_bucket", name = "UPLOADS", bucket_name = cloudflare_r2_bucket.uploads.name },
@@ -27,7 +30,7 @@ locals {
     }
     products_api = {
       file               = "workers/products-api.js"
-      compatibility_date = "2025-09-01"
+      compatibility_date = local.worker_compatibility_date
       bindings = [
         { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
         { type = "kv_namespace", name = "CACHE", namespace_id = cloudflare_workers_kv_namespace.cache.id },
@@ -37,7 +40,7 @@ locals {
     }
     order_processor = {
       file               = "workers/order-processor.js"
-      compatibility_date = "2025-09-01"
+      compatibility_date = local.worker_compatibility_date
       bindings = [
         { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
         { type = "queue", name = "ORDER_QUEUE", queue_name = cloudflare_queue.orders.queue_name },
@@ -45,7 +48,7 @@ locals {
     }
     admin_panel = {
       file               = "workers/admin-panel.js"
-      compatibility_date = "2025-09-01"
+      compatibility_date = local.worker_compatibility_date
       bindings = [
         { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
         { type = "kv_namespace", name = "SESSIONS", namespace_id = cloudflare_workers_kv_namespace.sessions.id },
@@ -60,6 +63,13 @@ resource "cloudflare_worker" "workers" {
 
   account_id = var.account_id
   name       = local.worker_names[each.key]
+
+  # Workers Logs: persist invocation logs so the demo can show request traces
+  # in the dashboard (Workers & Pages -> <worker> -> Logs).
+  observability = {
+    enabled            = true
+    head_sampling_rate = 1
+  }
 }
 
 resource "cloudflare_worker_version" "versions" {

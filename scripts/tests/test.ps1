@@ -225,6 +225,19 @@ Remove-Item $tmpFile -Force
 Assert-Status "upload with no file returns 400" 400 ((Invoke-Http -Uri "$api/api/upload" -Method "POST").StatusCode)
 Write-Host ""
 
+Write-Host "[ 6b ] AI Gateway"
+$summary = Invoke-Http -Uri "$api/api/products/summary"
+if ($summary.StatusCode -eq 200) {
+    Pass "products summary returns 200"
+    Assert-Contains "summary response includes gateway id" "demo-ai-gateway" $summary.Content
+    Assert-Contains "summary response includes model" "llama" $summary.Content
+} elseif ($summary.StatusCode -eq 503) {
+    Write-Host "  SKIP  AI binding unavailable (503); Workers AI not enabled on account?"
+} else {
+    Fail "products summary returned unexpected HTTP $($summary.StatusCode)"
+}
+Write-Host ""
+
 Write-Host "[ 7 ] Admin Panel"
 Assert-Status "admin without auth returns 401" 401 ((Invoke-Http -Uri "$admin/").StatusCode)
 Assert-Status "admin with wrong password returns 401" 401 ((Invoke-Http -Uri "$admin/" -User "admin" -Password "wrongpassword").StatusCode)

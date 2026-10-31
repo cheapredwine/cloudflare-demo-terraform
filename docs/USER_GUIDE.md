@@ -53,6 +53,10 @@ cp terraform.tfvars.example terraform.tfvars
 cloudflare_api_token = "your-api-token"
 account_id           = "your-account-id"
 zone_name            = "yourdomain.com"
+
+# Optional: real origin + corporate CIDR (defaults are documentation addresses)
+# origin_ipv4          = "198.51.100.10"
+# admin_allowlist_cidr = "198.51.100.0/24"
 ```
 
 ### Deploy
@@ -89,7 +93,7 @@ Canonical implementations live under `scripts/`. Preferred daily entrypoints use
 | Script | Purpose |
 |--------|---------|
 | `make deploy` | Deploy all infrastructure |
-| `make verify` | Offline config verification: fmt + validate + 16 mocked terraform tests |
+| `make verify` | Offline config verification: config guards + fmt + validate + 23 mocked terraform tests |
 | `make reset` | Re-seed data, keep infrastructure |
 | `make smoke` | Fast smoke checks for endpoints + queue consumer health |
 | `make test` | Full integration suite (API, admin, queue, async order persistence) |

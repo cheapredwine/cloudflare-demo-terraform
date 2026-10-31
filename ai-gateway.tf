@@ -24,5 +24,6 @@ resource "cloudflare_ai_gateway" "demo" {
 }
 
 output "ai_gateway_id" {
-  value = cloudflare_ai_gateway.demo.id
+  description = "AI Gateway ID used by the products Worker"
+  value       = cloudflare_ai_gateway.demo.id
 }

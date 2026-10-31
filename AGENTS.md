@@ -46,7 +46,7 @@ waf.tf                   # Managed WAF, custom WAF, rate limiting, redirects rul
 cdn.tf                   # Cache rules + zone settings (cache_level, min_tls_version)
 load_balancer.tf         # Health monitor, origin pool, zone load balancer
 outputs.tf               # Terraform outputs
-tests/main.tftest.hcl    # 16 mocked terraform test cases (make verify)
+tests/main.tftest.hcl    # 23 mocked terraform test cases (make verify)
 scripts/tests/config-checks.sh  # config-content guards (Rule 2 toggle, 949110 guidance)
 .github/workflows/verify.yml    # CI: mirrors make verify, no secrets
 scripts/empty-r2.py      # R2 destroy-time bucket emptying (token via env only)
@@ -228,7 +228,9 @@ Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_n
 ## Next Session Notes
 
 - Migrated to Cloudflare provider v5 (v5.28.1), Terraform CLI 1.17
-- `make verify` = config guards + fmt + validate + 16 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
+- `make verify` = config guards + fmt + validate + 23 mocked terraform tests (offline); CI runs the same chain in .github/workflows/verify.yml
+- Every ruleset rule carries a `ref` (stable rule IDs across edits; tested). Add one to any new rule.
+- Inputs are validated (`variables.tf`); `origin_ipv4` and `admin_allowlist_cidr` default to RFC 5737 documentation addresses. Worker compatibility date is the single `local.worker_compatibility_date`; Workers Logs (`observability`) is on for every Worker.
 - Rule 2 (Force HTTPS) demo toggle restored as a comment in waf.tf redirects; managed WAF uses the official published IDs — OWASP 949110 exception (rule 6179ae...843b323c) + OWASP Core Ruleset 4814384a... + CF Managed Ruleset efb7b8c9..., in the http_request_firewall_managed phase
 - New: managed/custom/rate-limit WAF, cache rules + zone settings, load balancer, AI Gateway + Workers AI summary endpoint
 - First real `terraform apply` must show the moved blocks as renames (DNS records + 4 workers); verify with `terraform plan` before applying

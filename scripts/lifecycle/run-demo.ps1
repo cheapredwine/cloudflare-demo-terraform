@@ -249,6 +249,13 @@ function Destroy-Infrastructure {
         exit 0
     }
 
+    # The R2 destroy-time cleanup reads the token from the environment
+    # (Terraform cannot pass variables into destroy provisioners).
+    if (-not $env:CLOUDFLARE_API_TOKEN -and (Test-Path "terraform.tfvars")) {
+        $tokenLine = Get-Content "terraform.tfvars" | Where-Object { $_ -match '^\s*cloudflare_api_token\s*=' } | Select-Object -First 1
+        if ($tokenLine -and $tokenLine -match '"([^"]+)"') { $env:CLOUDFLARE_API_TOKEN = $matches[1] }
+    }
+
     Invoke-CheckedCommand -Command terraform -Arguments @("destroy", "-auto-approve")
     Write-Host "✅ Infrastructure destroyed successfully"
     Write-Host "💰 All costs stopped"

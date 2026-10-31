@@ -72,21 +72,24 @@ resource "cloudflare_ruleset" "waf_custom" {
 
   rules = [
     {
+      ref         = "block_path_scanning"
       enabled     = true
       description = "Block path scanning"
       expression  = "(http.request.uri.path contains \"/wp-admin\" or http.request.uri.path contains \"/.env\" or http.request.uri.path contains \"/.git\")"
       action      = "block"
     },
     {
+      ref         = "challenge_empty_user_agent"
       enabled     = true
       description = "Challenge empty User-Agent"
       expression  = "(http.user_agent eq \"\")"
       action      = "managed_challenge"
     },
     {
+      ref         = "challenge_admin_non_allowlisted"
       enabled     = true
       description = "Admin panel: challenge non-corporate IPs"
-      expression  = "(http.request.uri.path contains \"/admin\" and ip.src ne 203.0.113.0/24)"
+      expression  = "(http.request.uri.path contains \"/admin\" and not ip.src in {${var.admin_allowlist_cidr}})"
       action      = "managed_challenge"
     }
   ]
@@ -103,6 +106,7 @@ resource "cloudflare_ruleset" "waf_rate_limit" {
   rules = [
     {
       # Per-IP limit on the public API: 50 requests / 10s, block for 60s
+      ref         = "rate_limit_api_per_ip"
       enabled     = true
       description = "Per-IP rate limit on /api/*"
       expression  = "(http.request.uri.path matches \"^/api/\")"
@@ -129,6 +133,7 @@ resource "cloudflare_ruleset" "redirects" {
   rules = [
     {
       # /old-shop -> /api/products
+      ref         = "redirect_old_shop"
       enabled     = true
       description = "Redirect old shop path to products API"
       expression  = "(http.request.uri.path eq \"/old-shop\")"
@@ -149,6 +154,7 @@ resource "cloudflare_ruleset" "redirects" {
     # "Always Use HTTPS" zone setting; the min_tls_version zone setting in cdn.tf
     # already sets the TLS floor. Kept as a demo toggle (original config, 2026-08).
     # {
+    #   ref         = "force_https"
     #   enabled     = true
     #   description = "Force HTTPS"
     #   expression  = "(not ssl)"
