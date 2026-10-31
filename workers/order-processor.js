@@ -20,78 +20,67 @@ export default {
         await processOrder(message.body, env);
         message.ack();
       } catch (error) {
-        console.error('Order processing failed:', error);
+        // Only temporary failures (e.g. D1 unavailable) reach here; a retry
+        // is safe because processOrder writes everything in one transaction
+        // and skips orders it has already stored.
+        console.error('Order processing failed, will retry:', error);
         message.retry();
       }
     }
   }
 };
 
+// Messages are delivered at least once, so the same order can arrive twice.
 async function processOrder(orderData, env) {
-  const { order_id, customer_id, items, total, created_at } = orderData;
-  
-  console.log(`Processing order ${order_id} for customer ${customer_id}`);
+  const { order_id, customer_id, items, created_at } = orderData;
 
-  // Insert order into database
-  const orderStmt = env.DB.prepare(`
-    INSERT INTO orders (id, customer_id, total_amount, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  
-  const now = new Date().toISOString();
-  await orderStmt.bind(
-    order_id,
-    customer_id,
-    total,
-    'processing',
-    created_at,
-    now
-  ).run();
-
-  // Insert order items
-  for (const item of items) {
-    const itemStmt = env.DB.prepare(`
-      INSERT INTO order_items (order_id, product_id, quantity, unit_price)
-      VALUES (?, ?, ?, ?)
-    `);
-    
-    await itemStmt.bind(
-      order_id,
-      item.product_id,
-      item.quantity,
-      item.unit_price
-    ).run();
-
-    // Update product stock
-    const stockStmt = env.DB.prepare(`
-      UPDATE products 
-      SET stock = stock - ?, updated_at = ?
-      WHERE id = ? AND stock >= ?
-    `);
-    
-    const stockResult = await stockStmt.bind(
-      item.quantity,
-      now,
-      item.product_id,
-      item.quantity
-    ).run();
-
-    if (stockResult.changes === 0) {
-      throw new Error(`Insufficient stock for product ${item.product_id}`);
-    }
+  const existing = await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(order_id).first();
+  if (existing) {
+    console.log(`Order ${order_id} already processed; skipping duplicate delivery`);
+    return;
   }
 
-  // Simulate payment processing delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // Price and stock come from D1, never from the client's message. A bad
+  // order is rejected (acked, not retried): a retry would fail the same way.
+  let total = 0;
+  for (const item of items || []) {
+    const product = await env.DB.prepare('SELECT price, stock FROM products WHERE id = ?')
+      .bind(item.product_id).first();
+    if (!product || !(item.quantity > 0) || product.stock < item.quantity) {
+      console.warn(`Order ${order_id} rejected: product ${item.product_id} missing or out of stock`);
+      return;
+    }
+    item.unit_price = product.price;
+    total += product.price * item.quantity;
+  }
+  if (!items || items.length === 0) {
+    console.warn(`Order ${order_id} rejected: no items`);
+    return;
+  }
 
-  // Update order status to completed
-  const updateStmt = env.DB.prepare(`
-    UPDATE orders 
-    SET status = ?, updated_at = ?
-    WHERE id = ?
-  `);
-  
-  await updateStmt.bind('completed', now, order_id).run();
+  console.log(`Processing order ${order_id} for customer ${customer_id}`);
+
+  // One batch = one transaction: the order, its items and the stock changes
+  // are stored together or not at all.
+  const now = new Date().toISOString();
+  const statements = [
+    env.DB.prepare(`
+      INSERT INTO orders (id, customer_id, total_amount, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'completed', ?, ?)
+    `).bind(order_id, customer_id, Math.round(total * 100) / 100, created_at, now),
+  ];
+  for (const item of items) {
+    statements.push(
+      env.DB.prepare(`
+        INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+        VALUES (?, ?, ?, ?)
+      `).bind(order_id, item.product_id, item.quantity, item.unit_price),
+      env.DB.prepare(`
+        UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?
+      `).bind(item.quantity, now, item.product_id),
+    );
+  }
+  await env.DB.batch(statements);
 
   // Send confirmation (simulated)
   await sendOrderConfirmation(order_id, customer_id, env);
