@@ -8,8 +8,12 @@
 account_id = "your-32-hex-account-id"
 zone_name  = "demo-platform.example"
 
+# Required. Only this range reaches admin.<zone> without a WAF challenge, and
+# the test/reset scripts run from your machine, so use your own public IP:
+#   curl -s https://ifconfig.me
+admin_allowlist_cidr = "198.51.100.7/32"
+
 # Optional overrides (defaults are RFC 5737 documentation addresses)
 # origin_ipv4            = "198.51.100.10"
 # secondary_origin_ipv4  = "198.51.100.20"
-# admin_allowlist_cidr   = "198.51.100.0/24"
 # primary_origin_enabled = false   # demo LB failover

@@ -43,9 +43,11 @@ variable "origin_ipv4" {
 }
 
 variable "admin_allowlist_cidr" {
-  description = "Corporate CIDR allowed to reach /admin without a managed challenge"
+  # No default on purpose: everyone outside this range gets a managed
+  # challenge on admin.<zone>, including the test and reset scripts. Use your
+  # own address, e.g. "<your public IP>/32" (curl -s https://ifconfig.me).
+  description = "IPv4 CIDR allowed to reach admin.<zone> without a managed challenge (required)"
   type        = string
-  default     = "203.0.113.0/24"
 
   validation {
     condition     = can(cidrnetmask(var.admin_allowlist_cidr))
