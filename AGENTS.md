@@ -17,14 +17,19 @@ live in README.md only.
    binding). Never add a token variable. Scripts fill both from the gitignored
    `secrets/` store through `scripts/lib/env.sh` / `env.ps1`, without overriding
    values that are already set (tested in config-checks). Never print them.
-3. **Every ruleset rule has a `ref`** (tested).
-4. **Tests stay on `command = plan`.** A mocked `apply` still runs the
-   `local-exec` provisioners against the real API (guarded in config-checks).
+3. **Every ruleset rule has a `ref`** (tested). Admin rules match the host
+   `admin.<zone>`, not a path. No `matches` operator (Business+ only; guarded).
+   Cache rules only affect origin traffic, not Worker responses.
+4. **Every test `run` says `command = plan`.** The default is apply, and a
+   mocked apply still runs the `local-exec` provisioners against the real API
+   (guarded in config-checks).
    For unknown IDs at plan time, use `override_resource { override_during = plan }`.
 5. **Don't add `moved` blocks from `cloudflare_workers_script`.** The provider
    can't move that type to `cloudflare_worker`; plan fails (verified, guarded).
    DNS `cloudflare_record` → `cloudflare_dns_record` moves are verified to work.
-6. **`.sh` and `.ps1` twins stay in sync.**
+6. **`.sh` and `.ps1` twins stay in sync.** Scripts may only use resource
+   addresses that exist in the `.tf` files (guarded). The `.sh` scripts pass
+   the admin password to curl with `-K` (`admin_curl_config`), never `-u`.
 7. Run `make verify` before committing; it must be green.
 
 ## Layout
@@ -38,14 +43,14 @@ storage.tf            R2, 2x KV, D1, queue
 workers.tf            4 explicit cloudflare_worker + cloudflare_worker_version pairs
 routes.tf             api.<zone>/* and admin.<zone>/* routes
 queue-consumer.tf     orders queue -> order-processor Worker
-waf.tf                managed (CF Managed + OWASP, 949110 skip on /admin), custom, rate limit, redirects (commented Rule 2 HTTPS toggle: keep it)
-cdn.tf                cache rules + cache_level / min_tls_version settings
+waf.tf                managed (CF Managed + OWASP, 949110 skip on admin.<zone>), custom, rate limit (Free-plan limits), redirects (commented Rule 2 HTTPS toggle: keep it)
+cdn.tf                cache rules for the origin-backed root host + cache_level / min_tls_version settings
 load_balancer.tf      1 monitor, primary + secondary pools, failover LB at app.<zone>
 ai-gateway.tf         demo-ai-gateway (products-api calls Workers AI through it)
 migrations.tf         terraform_data: D1 schema (wrangler) + R2 empty at destroy
 upgrade-from-v4.tf    DNS moved blocks; documented removed+import path for Workers
 outputs.tf            URLs, IDs
-tests/main.tftest.hcl 25 mocked tests (incl. expect_failures negative tests)
+tests/main.tftest.hcl 26 mocked tests (incl. expect_failures negative tests); every input pinned
 scripts/tests/config-checks.sh  grep guards terraform test can't express
 workers/*.js          Worker code (admin-panel reads env.ADMIN_PASSWORD, constant-time compare)
 scripts/              lifecycle (run-demo), tests (test, smoke), demos, lib/env.{sh,ps1}; .sh + .ps1

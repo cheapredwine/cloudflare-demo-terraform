@@ -56,6 +56,22 @@ if grep -rn 'demo123' workers/; then
 	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"
 fi
 
+# Workers can't read repo files, so the admin panel's POST /setup embeds a
+# copy of db/schema.sql. The two copies must define the same tables.
+python3 - <<'PY' || fail "db/schema.sql and workers/admin-panel.js define different tables"
+import re, sys
+def tables(text):
+    out = {}
+    for name, body in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\s*\)", text, re.S):
+        out[name] = re.sub(r"\s*\(", "(", " ".join(body.split()))
+    return out
+sql = tables(open("db/schema.sql").read())
+js = tables(open("workers/admin-panel.js").read())
+if not sql or sql != js:
+    print("db/schema.sql:", sql, "\nadmin-panel.js:", js, file=sys.stderr)
+    sys.exit(1)
+PY
+
 # The secrets loader must load from secrets/ files and never override a value
 # already set in the environment. Exercised in a scratch copy of the layout.
 scratch=$(mktemp -d)

@@ -556,3 +556,13 @@ run "admin_password_is_a_secret_binding" {
     condition     = alltrue(flatten([for v in [cloudflare_worker_version.api_gateway, cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] : [for b in v.bindings : !(b.type == "plain_text" && can(regex("(?i)pass|secret|token|key", b.name)))]]))
   }
 }
+
+run "rejects_ipv6_origin" {
+  command = plan
+
+  variables {
+    origin_ipv4 = "2001:db8::1"
+  }
+
+  expect_failures = [var.origin_ipv4]
+}

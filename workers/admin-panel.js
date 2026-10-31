@@ -29,14 +29,21 @@ export default {
       } else if (path === '/api/products') {
         return getProducts(env);
       } else if (path === '/setup' && request.method === 'POST') {
+        // Browsers resend cached Basic-auth credentials on cross-site
+        // requests, so refuse POSTs that a different site's page started.
+        const origin = request.headers.get('Origin');
+        if (origin && origin !== url.origin) {
+          return new Response('Forbidden', { status: 403 });
+        }
         return setupDatabase(env);
       }
 
       return new Response('Not Found', { status: 404 });
     } catch (error) {
+      // Details go to Workers Logs, not to the client.
+      console.error('admin panel error', error);
       return new Response(JSON.stringify({ 
-        error: 'Internal server error',
-        message: error.message 
+        error: 'Internal server error'
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -46,16 +53,39 @@ export default {
 };
 
 // Basic auth (user: admin). The password is the ADMIN_PASSWORD secret binding
-// set from var.admin_password; nothing is hardcoded. Hash both sides so the
-// constant-time compare always sees equal-length inputs.
+// set from var.admin_password; nothing is hardcoded.
 async function isValidAuth(authHeader, env) {
   if (!env.ADMIN_PASSWORD) return false;
-  const encoder = new TextEncoder();
-  const [given, expected] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(authHeader)),
-    crypto.subtle.digest('SHA-256', encoder.encode('Basic ' + btoa('admin:' + env.ADMIN_PASSWORD))),
+
+  // "Basic <base64(user:password)>"; the scheme name is case-insensitive.
+  const match = /^basic\s+(\S+)$/i.exec(authHeader);
+  if (!match) return false;
+  let decoded;
+  try {
+    const bytes = Uint8Array.from(atob(match[1]), (c) => c.charCodeAt(0));
+    decoded = new TextDecoder().decode(bytes);
+  } catch {
+    return false; // not valid base64
+  }
+  const sep = decoded.indexOf(':');
+  if (sep === -1) return false;
+
+  // Compare both parts in constant time, always (no early exit on the user).
+  const [userOk, passOk] = await Promise.all([
+    constantTimeEqual(decoded.slice(0, sep), 'admin'),
+    constantTimeEqual(decoded.slice(sep + 1), env.ADMIN_PASSWORD),
   ]);
-  return crypto.subtle.timingSafeEqual(given, expected);
+  return userOk && passOk;
+}
+
+// Hash both strings first so timingSafeEqual always gets equal-length input.
+async function constantTimeEqual(a, b) {
+  const encoder = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(a)),
+    crypto.subtle.digest('SHA-256', encoder.encode(b)),
+  ]);
+  return crypto.subtle.timingSafeEqual(ha, hb);
 }
 
 function serveDashboard(env) {
@@ -362,6 +392,8 @@ async function getOrders(env) {
   }
 }
 
+// Same tables as db/schema.sql (a Worker can't read repo files); keep the two
+// copies identical. scripts/tests/config-checks.sh compares them.
 async function setupDatabase(env) {
   try {
     // Create products table
@@ -410,9 +442,9 @@ async function setupDatabase(env) {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
+    console.error('database setup failed', error);
     return new Response(JSON.stringify({ 
-      error: 'Database setup failed',
-      message: error.message 
+      error: 'Database setup failed'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }

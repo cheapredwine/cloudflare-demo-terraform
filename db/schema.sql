@@ -1,5 +1,7 @@
--- D1 Database Schema for demo-products
--- Applied automatically via Terraform null_resource on first deploy
+-- D1 database schema for demo-products
+-- Applied on apply by terraform_data.d1_schema (migrations.tf), and again
+-- whenever this file changes. workers/admin-panel.js (POST /setup) embeds the
+-- same tables; config-checks fails if the two copies differ.
 
 CREATE TABLE IF NOT EXISTS products (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
