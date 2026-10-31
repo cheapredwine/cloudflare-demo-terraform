@@ -5,6 +5,10 @@
 
 set -e
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
+
 # Parse command line arguments
 ACTION=${1:-deploy}
 ZONE_NAME=""
@@ -62,7 +66,7 @@ check_prerequisites() {
 	deploy | destroy | fresh)
 		if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
 			echo "❌ CLOUDFLARE_API_TOKEN is not set"
-			echo "   export CLOUDFLARE_API_TOKEN=<token>   (see README: Token permissions)"
+			echo "   Put it in secrets/cloudflare_api_token, or export CLOUDFLARE_API_TOKEN=<token>"
 			exit 1
 		fi
 		;;

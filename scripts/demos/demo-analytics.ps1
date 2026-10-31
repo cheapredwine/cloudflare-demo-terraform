@@ -5,6 +5,9 @@
 
 $ErrorActionPreference = "Stop"
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+. (Join-Path $PSScriptRoot "../lib/env.ps1")
+
 function Get-TfvarsValue {
     param([string]$Key)
     if (-not (Test-Path "terraform.tfvars")) { return "" }
@@ -70,7 +73,7 @@ $admin = "https://admin.$zoneName"
 # Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
 $script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
 if ([string]::IsNullOrWhiteSpace($script:AdminPassword)) {
-    Write-Host "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+    Write-Host "ERROR: put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
     exit 1
 }
 $rounds = if ($args.Count -gt 0) { [int]$args[0] } else { 3 }

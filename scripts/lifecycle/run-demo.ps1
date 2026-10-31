@@ -9,6 +9,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+. (Join-Path $PSScriptRoot "../lib/env.ps1")
+
 function Show-Help {
     Write-Host "🚀 Cloudflare Demo Platform Management"
     Write-Host "====================================="
@@ -329,7 +332,7 @@ function Check-Prerequisites {
     # environment; it is never a Terraform variable or a tfvars entry.
     if ($script:Action -in @("deploy", "destroy", "fresh") -and -not $env:CLOUDFLARE_API_TOKEN) {
         Write-Host "❌ CLOUDFLARE_API_TOKEN is not set"
-        Write-Host '   $env:CLOUDFLARE_API_TOKEN = "<token>"   (see README: Token permissions)'
+        Write-Host '   Put it in secrets/cloudflare_api_token, or set $env:CLOUDFLARE_API_TOKEN'
         exit 1
     }
 }

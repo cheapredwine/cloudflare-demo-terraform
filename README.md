@@ -109,13 +109,19 @@ flowchart LR
 
 ### Configure
 
-Credentials come from the environment, never from files:
+Terraform reads credentials only from environment variables. The scripts
+fill those variables from a gitignored `secrets/` folder, so you set them up
+once:
 
 ```bash
-export CLOUDFLARE_API_TOKEN=<token>          # provider, wrangler, R2 cleanup
-export TF_VAR_admin_password=<12+ chars>     # stored as a Worker secret
-cp terraform.tfvars.example terraform.tfvars # account_id, zone_name (gitignored)
+cp terraform.tfvars.example terraform.tfvars              # account_id, zone_name
+printf '%s\n' '<token>' > secrets/cloudflare_api_token     # -> CLOUDFLARE_API_TOKEN
+printf '%s\n' '<12+ chars>' > secrets/admin_password       # -> TF_VAR_admin_password
+chmod 600 secrets/cloudflare_api_token secrets/admin_password
 ```
+
+Already-exported variables always win. If you run plain `terraform`
+yourself, export the two variables first (see [`secrets/README.md`](./secrets/README.md)).
 
 ### Verify, deploy, tear down
 

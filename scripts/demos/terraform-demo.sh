@@ -5,6 +5,10 @@
 
 set -e
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
+
 ZONE_NAME=""
 ACTION=${1:-help}
 

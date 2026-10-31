@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -29,7 +33,7 @@ if [ -z "$ADMIN_PASSWORD" ] && [ -f "terraform.tfvars" ]; then
 	ADMIN_PASSWORD=$(sed -n 's/^admin_password[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
 fi
 if [ -z "$ADMIN_PASSWORD" ]; then
-	echo "ERROR: set TF_VAR_admin_password or admin_password in terraform.tfvars"
+	echo "ERROR: put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
 	exit 1
 fi
 

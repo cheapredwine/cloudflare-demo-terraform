@@ -46,4 +46,25 @@ if grep -rn 'demo123' workers/; then
 	fail "hardcoded admin password found in workers/ (use the ADMIN_PASSWORD secret)"
 fi
 
+# The secrets loader must load from secrets/ files and never override a value
+# already set in the environment. Exercised in a scratch copy of the layout.
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir -p "$scratch/scripts/lib" "$scratch/secrets"
+cp scripts/lib/env.sh "$scratch/scripts/lib/"
+printf 'file-token\n' >"$scratch/secrets/cloudflare_api_token"
+printf 'file-password\n' >"$scratch/secrets/admin_password"
+# printenv runs as a child process, so this also proves the values are EXPORTED
+# (terraform and wrangler only see exported variables).
+# shellcheck disable=SC2016 # single quotes: the inner bash expands these
+loaded=$(env -u CLOUDFLARE_API_TOKEN -u TF_VAR_admin_password bash -c \
+	'source "$1/scripts/lib/env.sh"; echo "$(printenv CLOUDFLARE_API_TOKEN)/$(printenv TF_VAR_admin_password)"' _ "$scratch")
+[ "$loaded" = "file-token/file-password" ] ||
+	fail "scripts/lib/env.sh did not load secrets/ files"
+# shellcheck disable=SC2016
+kept=$(CLOUDFLARE_API_TOKEN=from-env bash -c \
+	'source "$1/scripts/lib/env.sh"; printenv CLOUDFLARE_API_TOKEN' _ "$scratch")
+[ "$kept" = "from-env" ] ||
+	fail "scripts/lib/env.sh overrode an already-set CLOUDFLARE_API_TOKEN"
+
 echo "config-checks: all guards passed"

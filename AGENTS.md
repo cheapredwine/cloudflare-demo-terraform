@@ -11,10 +11,12 @@ live in README.md only.
    writing the blocks out reads better (that's why `workers.tf` repeats itself).
    Every `.tf` file opens with a header naming the Terraform concept it shows.
    Keep it true when you edit the file.
-2. **Credentials only from the environment.** `CLOUDFLARE_API_TOKEN` (the
-   provider, wrangler and `scripts/empty-r2.py` all read it). Never add a token
-   variable. `admin_password` is a sensitive variable that becomes a
-   `secret_text` binding; prefer `TF_VAR_admin_password`.
+2. **Terraform gets credentials only from the environment.** `CLOUDFLARE_API_TOKEN`
+   (the provider, wrangler and `scripts/empty-r2.py` all read it), and
+   `TF_VAR_admin_password` (a sensitive variable that becomes a `secret_text`
+   binding). Never add a token variable. Scripts fill both from the gitignored
+   `secrets/` store through `scripts/lib/env.sh` / `env.ps1`, without overriding
+   values that are already set (tested in config-checks). Never print them.
 3. **Every ruleset rule has a `ref`** (tested).
 4. **Tests stay on `command = plan`.** A mocked `apply` still runs the
    `local-exec` provisioners against the real API (guarded in config-checks).
@@ -46,7 +48,8 @@ outputs.tf            URLs, IDs
 tests/main.tftest.hcl 25 mocked tests (incl. expect_failures negative tests)
 scripts/tests/config-checks.sh  grep guards terraform test can't express
 workers/*.js          Worker code (admin-panel reads env.ADMIN_PASSWORD, constant-time compare)
-scripts/              lifecycle (run-demo), tests (test, smoke), demos; .sh + .ps1
+scripts/              lifecycle (run-demo), tests (test, smoke), demos, lib/env.{sh,ps1}; .sh + .ps1
+secrets/              gitignored real secrets (README + *.example tracked)
 .github/workflows/verify.yml    CI = make verify, no secrets
 ```
 
