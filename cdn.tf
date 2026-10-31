@@ -6,6 +6,10 @@
 #   - One resource per setting: v5's `cloudflare_zone_setting` manages exactly
 #     one zone setting, so each setting is its own small, reviewable block.
 #     It replaces v4's all-in-one `cloudflare_zone_settings_override`.
+#   - Destroy doesn't always mean "undo": a zone setting can't be deleted,
+#     only changed, so `terraform destroy` just forgets it (provider 5.28.1).
+#     The zone keeps the last value Terraform set; change it back yourself
+#     if you need the old one.
 #
 # Cache rules apply to traffic that goes to an origin: here, the root hostname
 # (dns.tf). They don't cache what api.<zone> and admin.<zone> return, because

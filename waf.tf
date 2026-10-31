@@ -6,8 +6,10 @@
 #     rate limiting, redirects). One ruleset per phase per zone.
 #   - Nested attributes: v5 writes `rules = [{ ... }]` (a list of objects),
 #     not repeated `rules { }` blocks as in v4.
-#   - `ref` on every rule: a stable name Terraform uses to match rules across
-#     edits, so changing one rule doesn't recreate the others with new IDs.
+#   - `ref` on every rule: a name you choose that stays the same across edits.
+#     Without one, a rule's ref is its ID, which the API assigns; with one,
+#     plans and dashboards identify the rule by a name you can read. (Rules
+#     are still a list: reordering them shows up as changes in the plan.)
 
 # --- Managed WAF ruleset -----------------------------------------------------
 # Managed phase (http_request_firewall_managed): a host-scoped exception for

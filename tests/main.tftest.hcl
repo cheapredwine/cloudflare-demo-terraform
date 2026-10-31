@@ -55,12 +55,12 @@ run "dns_records" {
 
   assert {
     error_message = "api record should be AAAA at api.<zone>"
-    condition     = cloudflare_dns_record.api.type == "AAAA" && cloudflare_dns_record.api.name == "api"
+    condition     = cloudflare_dns_record.api.type == "AAAA" && cloudflare_dns_record.api.name == "api.demo-platform.example"
   }
 
   assert {
     error_message = "admin record should be AAAA at admin.<zone>"
-    condition     = cloudflare_dns_record.admin.type == "AAAA" && cloudflare_dns_record.admin.name == "admin"
+    condition     = cloudflare_dns_record.admin.type == "AAAA" && cloudflare_dns_record.admin.name == "admin.demo-platform.example"
   }
 }
 
@@ -264,8 +264,8 @@ run "waf_rate_limit_ruleset" {
   }
 
   assert {
-    error_message = "rate limit rule should be per-IP and per-colo"
-    condition     = contains(cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.characteristics, "ip.src")
+    error_message = "rate limit rule should be per-IP and per-colo (the API requires cf.colo.id)"
+    condition     = toset(cloudflare_ruleset.waf_rate_limit.rules[0].ratelimit.characteristics) == toset(["cf.colo.id", "ip.src"])
   }
 
   assert {
@@ -499,7 +499,7 @@ run "workers_observability" {
 
   assert {
     error_message = "every Worker should have Workers Logs enabled"
-    condition     = alltrue([for w in [cloudflare_worker.api_gateway, cloudflare_worker.products_api, cloudflare_worker.order_processor, cloudflare_worker.admin_panel] : w.observability.enabled])
+    condition     = alltrue([for w in [cloudflare_worker.api_gateway, cloudflare_worker.products_api, cloudflare_worker.order_processor, cloudflare_worker.admin_panel] : w.observability.enabled && w.observability.logs.enabled && w.observability.logs.invocation_logs])
   }
 }
 
@@ -565,4 +565,49 @@ run "rejects_ipv6_origin" {
   }
 
   expect_failures = [var.origin_ipv4]
+}
+
+run "rejects_bad_zone_name" {
+  command = plan
+
+  variables {
+    zone_name = "https://Example.com"
+  }
+
+  expect_failures = [var.zone_name]
+}
+
+run "rejects_bad_secondary_origin_ip" {
+  command = plan
+
+  variables {
+    secondary_origin_ipv4 = "203.0.113.300"
+  }
+
+  expect_failures = [var.secondary_origin_ipv4]
+}
+
+run "rejects_same_origin_for_both_pools" {
+  command = plan
+
+  variables {
+    secondary_origin_ipv4 = "203.0.113.10" # same as origin_ipv4
+  }
+
+  expect_failures = [cloudflare_load_balancer.app]
+}
+
+run "warns_when_zone_not_active" {
+  command = plan
+
+  override_data {
+    target          = data.cloudflare_zone.main
+    override_during = plan
+    values = {
+      id     = "023e105f4ecef8ad9ca31a8372d0c353"
+      status = "pending"
+    }
+  }
+
+  expect_failures = [check.zone_is_active]
 }

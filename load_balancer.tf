@@ -4,6 +4,8 @@
 #   - A boolean input variable (`var.primary_origin_enabled`) that changes
 #     live behavior: flip it with -var and the plan shows one attribute change.
 #   - Account-level and zone-level resources referencing each other by ID.
+#   - A `precondition`: a lifecycle check on one resource that fails the plan
+#     with a clear message when an assumption about the inputs is wrong.
 #
 # Active/passive failover: one health monitor probes two origin pools; the
 # load balancer sends traffic to the first healthy pool in default_pools
@@ -87,6 +89,14 @@ resource "cloudflare_load_balancer" "app" {
   ]
   fallback_pool    = cloudflare_load_balancer_pool.secondary.id
   session_affinity = "none"
+
+  lifecycle {
+    # Failover between two pools that point at the same server proves nothing.
+    precondition {
+      condition     = var.origin_ipv4 != var.secondary_origin_ipv4
+      error_message = "origin_ipv4 and secondary_origin_ipv4 are the same address, so failover would land on the same server."
+    }
+  }
 }
 
 output "load_balancer_hostname" {

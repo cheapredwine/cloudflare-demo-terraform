@@ -21,7 +21,10 @@ resource "cloudflare_ai_gateway" "demo" {
   retry_delay        = 1000
   retry_max_attempts = 3
 
-  workers_ai_billing_mode = "unified"
+  # "postpaid": Workers AI calls through this gateway are billed to the
+  # account like any other Workers AI usage. "unified" would instead spend
+  # AI Gateway credits, which a fresh demo account doesn't have.
+  workers_ai_billing_mode = "postpaid"
 }
 
 output "ai_gateway_id" {
