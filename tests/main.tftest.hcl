@@ -20,10 +20,16 @@ mock_provider "cloudflare" {
   }
 }
 
+# Every input is set here, so the tests don't depend on your local
+# terraform.tfvars (terraform test reads it) or TF_VAR_* environment.
 variables {
-  admin_password = "test-admin-password-not-real"
-  account_id     = "01a7362d546811e79dd32d0171c0d0e6"
-  zone_name      = "demo-platform.example"
+  admin_password         = "test-admin-password-not-real"
+  account_id             = "01a7362d546811e79dd32d0171c0d0e6"
+  zone_name              = "demo-platform.example"
+  origin_ipv4            = "203.0.113.10"
+  secondary_origin_ipv4  = "203.0.113.20"
+  admin_allowlist_cidr   = "203.0.113.0/24"
+  primary_origin_enabled = true
 }
 
 # ---------------------------------------------------------------------------
@@ -34,8 +40,8 @@ run "zone_lookup" {
   command = plan
 
   assert {
-    error_message = "zone data source should resolve the demo zone id"
-    condition     = data.cloudflare_zone.main.id == "023e105f4ecef8ad9ca31a8372d0c353"
+    error_message = "zone lookup should filter by the zone name and the account"
+    condition     = data.cloudflare_zone.main.filter.name == "demo-platform.example" && data.cloudflare_zone.main.filter.account.id == "01a7362d546811e79dd32d0171c0d0e6"
   }
 }
 
@@ -44,7 +50,7 @@ run "dns_records" {
 
   assert {
     error_message = "root A record should point at the demo origin and be proxied"
-    condition     = cloudflare_dns_record.root.type == "A" && cloudflare_dns_record.root.proxied == true
+    condition     = cloudflare_dns_record.root.type == "A" && cloudflare_dns_record.root.content == "203.0.113.10" && cloudflare_dns_record.root.proxied == true
   }
 
   assert {
