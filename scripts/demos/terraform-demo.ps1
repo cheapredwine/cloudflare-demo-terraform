@@ -89,6 +89,8 @@ function Demo-Idempotency {
     Press-Enter
     Write-Host "Second apply (should show 0 changes):"
     Run-Cmd "terraform apply -auto-approve"
+    Write-Host "Notice: '0 to add, 0 to change, 0 to destroy' on second run."
+    Write-Host "This proves Terraform only acts when actual changes are needed."
 }
 
 function Demo-DriftDetect {
@@ -98,13 +100,21 @@ function Demo-DriftDetect {
     Run-Cmd "terraform apply -auto-approve"
     Write-Host ""
     Write-Host "ACTION REQUIRED:"
-    Write-Host "Go to https://dash.cloudflare.com and manually change something"
-    Write-Host "in the $script:ZoneName zone, then continue."
+    Write-Host "Go to https://dash.cloudflare.com and, in the $script:ZoneName zone,"
+    Write-Host "change something Terraform manages. Suggestions:"
+    Write-Host "  - SSL/TLS > Edge Certificates > Minimum TLS Version: pick 1.0"
+    Write-Host "  - Security > WAF > Custom rules: edit the 'Block path scanning'"
+    Write-Host "    rule's expression, or disable it"
+    Write-Host ""
+    Write-Host "Terraform only compares what it manages. Things you ADD (a new"
+    Write-Host "DNS record, a new rule in another ruleset) are invisible to it,"
+    Write-Host "so they never show up as drift."
     Press-Enter
     Write-Host "Detecting drift:"
     Run-Cmd "terraform plan"
     Write-Host "Reconciling back to desired state:"
     Run-Cmd "terraform apply -auto-approve"
+    Write-Host "Drift resolved. Infrastructure now matches code again."
 }
 
 function Demo-StateInspect {
@@ -170,6 +180,8 @@ function Demo-TaintReplace {
     Press-Enter
     Write-Host "-replace=<address> plans a destroy + create for that one resource."
     Write-Host "(It replaces the older 'terraform taint', which edits state first.)"
+    Write-Host "A Worker version can't be deleted, so the 'destroy' half only drops"
+    Write-Host "the old version from state; it stays in the Worker's version history."
     Press-Enter
     Run-Cmd "terraform plan -replace=cloudflare_worker_version.products_api"
     Press-Enter
@@ -193,8 +205,12 @@ function Demo-Graph {
     Print-Header "DEMO: Resource Dependency Graph"
     Press-Enter
     if (Get-Command dot -ErrorAction SilentlyContinue) {
-        Run-Cmd "terraform graph | dot -Tpng > terraform-graph.png"
+        # dot writes the PNG itself: PowerShell 5.1 would re-encode a binary
+        # stream piped through > and corrupt the image.
+        Run-Cmd "terraform graph | Set-Content -Encoding ascii terraform-graph.dot"
+        Run-Cmd "dot -Tpng terraform-graph.dot -o terraform-graph.png"
         Run-Cmd "Get-Item terraform-graph.png"
+        Write-Host "Graph saved to terraform-graph.png"
     } else {
         Run-Cmd "terraform graph"
     }
@@ -211,11 +227,13 @@ function Run-All {
     }
     Check-Prereqs
     Demo-Idempotency
+    Demo-DriftDetect
     Demo-StateInspect
     Demo-Targeted
     Demo-PlanFile
     Demo-RefreshOnly
     Demo-VarOverride
+    Demo-TaintReplace
     Demo-Graph
     Demo-Workspaces
 }

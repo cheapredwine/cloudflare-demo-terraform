@@ -10,10 +10,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 
 ZONE_NAME=""
-ACCOUNT_ID=""
 if [ -f "terraform.tfvars" ]; then
-	ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
-	ACCOUNT_ID=$(grep 'account_id' terraform.tfvars | cut -d'"' -f2)
+	ZONE_NAME=$(sed -n 's/^zone_name[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
 fi
 
 if [ -z "$ZONE_NAME" ]; then
@@ -42,17 +40,22 @@ echo ""
 echo "This script generates traffic across all workers."
 echo "Open the Cloudflare dashboard to see live metrics:"
 echo ""
-echo "  Workers Analytics:"
-echo "  https://dash.cloudflare.com/$ACCOUNT_ID/workers/overview"
+# ?to=/:account/... links let the dashboard pick the account, so the
+# account ID never appears on screen.
+echo "  Workers & Pages:"
+echo "  https://dash.cloudflare.com/?to=/:account/workers-and-pages"
 echo ""
 echo "  Per-worker (API Gateway):"
-echo "  https://dash.cloudflare.com/$ACCOUNT_ID/workers/services/view/demo-api-gateway/production/metrics"
+echo "  https://dash.cloudflare.com/?to=/:account/workers/services/view/demo-api-gateway/production"
 echo ""
 echo "  Per-worker (Products API):"
-echo "  https://dash.cloudflare.com/$ACCOUNT_ID/workers/services/view/demo-products-api/production/metrics"
+echo "  https://dash.cloudflare.com/?to=/:account/workers/services/view/demo-products-api/production"
 echo ""
 echo "  Zone Analytics:"
-echo "  https://dash.cloudflare.com/$ACCOUNT_ID/$ZONE_NAME/analytics/traffic"
+echo "  https://dash.cloudflare.com/?to=/:account/$ZONE_NAME/analytics/traffic"
+echo ""
+echo "Rounds are 10 s apart: waf.tf rate-limits /api/* to 50 requests per"
+echo "10 s per IP, and blocked requests wouldn't reach the Workers."
 echo ""
 echo "Generating traffic... (${ROUNDS} rounds)"
 echo ""
@@ -60,7 +63,12 @@ echo ""
 q() { curl -s -o /dev/null "$@"; }
 
 for i in $(seq 1 "$ROUNDS"); do
+	[ "$i" -gt 1 ] && sleep 10
 	echo "Round $i/$ROUNDS"
+
+	# A real product ID (IDs aren't reused, so after a reset 1 may not exist)
+	PRODUCT_ID=$(curl -s "$API/api/products" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2 || true)
+	PRODUCT_ID=${PRODUCT_ID:-1}
 
 	# Auth flow
 	printf "  Auth... "
@@ -79,15 +87,15 @@ for i in $(seq 1 "$ROUNDS"); do
 	q "$API/api/products"
 	q "$API/api/products"
 	q "$API/api/products"
-	q "$API/api/products/1"
-	q "$API/api/products/2"
+	q "$API/api/products/$PRODUCT_ID"
+	q "$API/api/products/999999" # 404
 	echo "done"
 
 	# Orders
 	printf "  Orders... "
 	q -X POST "$API/api/orders" \
 		-H "Content-Type: application/json" \
-		-d "{\"customer_id\":\"demo-$i\",\"items\":[{\"product_id\":1,\"quantity\":1,\"unit_price\":24.99}],\"total\":24.99}"
+		-d "{\"customer_id\":\"demo-$i\",\"items\":[{\"product_id\":$PRODUCT_ID,\"quantity\":1}]}"
 	q -X POST "$API/api/orders" \
 		-H "Content-Type: application/json" \
 		-d '{"customer_id":"missing-items"}'
@@ -126,6 +134,6 @@ echo " ~$((ROUNDS * 25)) requests sent across all workers"
 echo "================================================"
 echo ""
 echo "Dashboard links (may take ~1 min to show data):"
-echo "  Workers: https://dash.cloudflare.com/$ACCOUNT_ID/workers/overview"
-echo "  Zone:    https://dash.cloudflare.com/$ACCOUNT_ID/$ZONE_NAME/analytics/traffic"
+echo "  Workers: https://dash.cloudflare.com/?to=/:account/workers-and-pages"
+echo "  Zone:    https://dash.cloudflare.com/?to=/:account/$ZONE_NAME/analytics/traffic"
 echo ""

@@ -8,6 +8,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Redirect plain HTTP before asking for a password, so the browser never
+    // sends Basic-auth credentials unencrypted.
+    if (url.protocol === 'http:') {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 301);
+    }
+
     // Basic auth check
     const authHeader = request.headers.get('Authorization');
     if (!authHeader || !(await isValidAuth(authHeader, env))) {
@@ -28,14 +35,14 @@ export default {
         return getOrders(env);
       } else if (path === '/api/products') {
         return getProducts(env);
-      } else if (path === '/setup' && request.method === 'POST') {
+      } else if ((path === '/setup' || path === '/reset') && request.method === 'POST') {
         // Browsers resend cached Basic-auth credentials on cross-site
         // requests, so refuse POSTs that a different site's page started.
         const origin = request.headers.get('Origin');
         if (origin && origin !== url.origin) {
           return new Response('Forbidden', { status: 403 });
         }
-        return setupDatabase(env);
+        return path === '/setup' ? setupDatabase(env) : resetData(env);
       }
 
       return new Response('Not Found', { status: 404 });
@@ -210,6 +217,13 @@ function serveDashboard(env) {
             }
         }
 
+        // Product and order fields come from the public API, so anyone can
+        // set them. Escape every value before it goes into innerHTML.
+        function esc(value) {
+            const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+            return String(value ?? '').replace(/[&<>"']/g, (c) => entities[c]);
+        }
+
         async function fetchProducts() {
             try {
                 const response = await fetch('/api/products');
@@ -218,11 +232,11 @@ function serveDashboard(env) {
                 let html = '<table><tr><th>ID</th><th>Name</th><th>Price</th><th>Category</th><th>Stock</th></tr>';
                 for (const product of data.products || []) {
                     html += \`<tr>
-                        <td>\${product.id}</td>
-                        <td>\${product.name}</td>
-                        <td>$\${product.price}</td>
-                        <td>\${product.category}</td>
-                        <td>\${product.stock}</td>
+                        <td>\${esc(product.id)}</td>
+                        <td>\${esc(product.name)}</td>
+                        <td>$\${esc(product.price)}</td>
+                        <td>\${esc(product.category)}</td>
+                        <td>\${esc(product.stock)}</td>
                     </tr>\`;
                 }
                 html += '</table>';
@@ -241,11 +255,11 @@ function serveDashboard(env) {
                 let html = '<table><tr><th>ID</th><th>Customer</th><th>Status</th><th>Total</th><th>Created</th></tr>';
                 for (const order of data.orders || []) {
                     html += \`<tr>
-                        <td>\${order.id}</td>
-                        <td>\${order.customer_id}</td>
-                        <td>\${order.status}</td>
-                        <td>$\${order.total_amount}</td>
-                        <td>\${new Date(order.created_at).toLocaleString()}</td>
+                        <td>\${esc(order.id)}</td>
+                        <td>\${esc(order.customer_id)}</td>
+                        <td>\${esc(order.status)}</td>
+                        <td>$\${esc(order.total_amount)}</td>
+                        <td>\${esc(new Date(order.created_at).toLocaleString())}</td>
                     </tr>\`;
                 }
                 html += '</table>';
@@ -265,13 +279,13 @@ function serveDashboard(env) {
                 const result = await response.json();
                 
                 if (response.ok) {
-                    resultDiv.innerHTML = \`<div style="color: green; background: #d4edda; padding: 10px; border-radius: 4px; margin: 10px 0;">\${result.message}</div>\`;
+                    resultDiv.innerHTML = \`<div style="color: green; background: #d4edda; padding: 10px; border-radius: 4px; margin: 10px 0;">\${esc(result.message)}</div>\`;
                     setTimeout(loadData, 1000);
                 } else {
-                    resultDiv.innerHTML = \`<div class="error">\${result.error}</div>\`;
+                    resultDiv.innerHTML = \`<div class="error">\${esc(result.error)}</div>\`;
                 }
             } catch (error) {
-                resultDiv.innerHTML = \`<div class="error">Setup failed: \${error.message}</div>\`;
+                resultDiv.innerHTML = \`<div class="error">Setup failed: \${esc(error.message)}</div>\`;
             }
         }
 
@@ -284,13 +298,13 @@ function serveDashboard(env) {
                 const result = await response.json();
                 
                 if (response.ok) {
-                    resultDiv.innerHTML = \`<div style="color: green; background: #d4edda; padding: 10px; border-radius: 4px; margin: 10px 0;">\${result.message}</div>\`;
+                    resultDiv.innerHTML = \`<div style="color: green; background: #d4edda; padding: 10px; border-radius: 4px; margin: 10px 0;">\${esc(result.message)}</div>\`;
                     setTimeout(loadData, 1000);
                 } else {
-                    resultDiv.innerHTML = \`<div class="error">\${result.error || 'Failed to seed data'}</div>\`;
+                    resultDiv.innerHTML = \`<div class="error">\${esc(result.error || 'Failed to seed data')}</div>\`;
                 }
             } catch (error) {
-                resultDiv.innerHTML = \`<div class="error">Seed failed: \${error.message}</div>\`;
+                resultDiv.innerHTML = \`<div class="error">Seed failed: \${esc(error.message)}</div>\`;
             }
         }
 
@@ -390,6 +404,19 @@ async function getOrders(env) {
       headers: { 'Content-Type': 'application/json' }
     });
   }
+}
+
+// Empty every table (children first, for the foreign keys). The products API
+// re-fills and clears its KV cache when the demo seeds again.
+async function resetData(env) {
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM order_items'),
+    env.DB.prepare('DELETE FROM orders'),
+    env.DB.prepare('DELETE FROM products'),
+  ]);
+  return new Response(JSON.stringify({ message: 'All products and orders deleted' }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
 
 // Same tables as db/schema.sql (a Worker can't read repo files); keep the two

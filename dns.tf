@@ -3,6 +3,9 @@
 # Terraform concepts:
 #   - Resources with input variables: `var.origin_ipv4` is set in tfvars.
 #   - A local value naming a magic constant (`100::`) so it reads as intent.
+#   - String interpolation: "api.${var.zone_name}". Names are written in full
+#     because the API stores and returns them that way; a short "api" would
+#     show up as a change on every plan.
 # (Upgrading from v4's cloudflare_record? See upgrade-from-v4.tf.)
 
 locals {
@@ -22,7 +25,7 @@ resource "cloudflare_dns_record" "root" {
 
 resource "cloudflare_dns_record" "api" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "api"
+  name    = "api.${var.zone_name}"
   content = local.worker_only_placeholder_ipv6
   type    = "AAAA"
   proxied = true
@@ -31,7 +34,7 @@ resource "cloudflare_dns_record" "api" {
 
 resource "cloudflare_dns_record" "admin" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "admin"
+  name    = "admin.${var.zone_name}"
   content = local.worker_only_placeholder_ipv6
   type    = "AAAA"
   proxied = true

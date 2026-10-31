@@ -13,6 +13,11 @@
 #   cloudflare_worker_version  its code + bindings; deploy = true sends
 #                              100% of traffic to this version on apply
 #
+# Destroying a cloudflare_worker_version only removes it from state (the API
+# can't delete a single version); destroying the cloudflare_worker deletes
+# the Worker and all its versions. So `-replace` on a version uploads a new
+# version and leaves the old one in the Worker's version history.
+#
 # Each Worker below is written out in full on purpose: repetitive, but you can
 # read any one block and see everything that Worker gets.
 
@@ -24,9 +29,14 @@ locals {
 # --- API gateway: public entry point at api.<zone> ------------------------------
 
 resource "cloudflare_worker" "api_gateway" {
-  account_id    = var.account_id
-  name          = "demo-api-gateway"
-  observability = { enabled = true } # Workers Logs in the dashboard
+  account_id = var.account_id
+  name       = "demo-api-gateway"
+  # Workers Logs in the dashboard. Logs are set explicitly rather than left
+  # to the API's defaults, so the plan shows exactly what you get.
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = true }
+  }
 }
 
 resource "cloudflare_worker_version" "api_gateway" {
@@ -60,9 +70,12 @@ resource "cloudflare_worker_version" "api_gateway" {
 # --- Products API: private, reached only through the gateway's service binding -
 
 resource "cloudflare_worker" "products_api" {
-  account_id    = var.account_id
-  name          = "demo-products-api"
-  observability = { enabled = true }
+  account_id = var.account_id
+  name       = "demo-products-api"
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = true }
+  }
 }
 
 resource "cloudflare_worker_version" "products_api" {
@@ -89,9 +102,12 @@ resource "cloudflare_worker_version" "products_api" {
 # --- Order processor: consumes the orders queue (see queue-consumer.tf) ---------
 
 resource "cloudflare_worker" "order_processor" {
-  account_id    = var.account_id
-  name          = "demo-order-processor"
-  observability = { enabled = true }
+  account_id = var.account_id
+  name       = "demo-order-processor"
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = true }
+  }
 }
 
 resource "cloudflare_worker_version" "order_processor" {
@@ -116,9 +132,12 @@ resource "cloudflare_worker_version" "order_processor" {
 # --- Admin panel: admin.<zone>, Basic auth ---------------------------------------
 
 resource "cloudflare_worker" "admin_panel" {
-  account_id    = var.account_id
-  name          = "demo-admin-panel"
-  observability = { enabled = true }
+  account_id = var.account_id
+  name       = "demo-admin-panel"
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = true }
+  }
 }
 
 resource "cloudflare_worker_version" "admin_panel" {

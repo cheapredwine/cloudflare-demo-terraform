@@ -52,7 +52,7 @@ check_prereqs() {
 		exit 1
 	fi
 
-	ZONE_NAME=$(grep 'zone_name' terraform.tfvars | cut -d'"' -f2)
+	ZONE_NAME=$(sed -n 's/^zone_name[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' terraform.tfvars)
 	echo "Zone: $ZONE_NAME"
 	echo ""
 }
@@ -103,8 +103,7 @@ demo_drift_detect() {
 	echo ""
 	echo "Steps:"
 	echo "  1. Deploy infrastructure"
-	echo "  2. YOU: Go to Cloudflare dashboard and manually change something"
-	echo "     (e.g., add a DNS record, modify a Worker, change SSL setting)"
+	echo "  2. YOU: change something Terraform manages in the dashboard"
 	echo "  3. Run terraform plan to detect the drift"
 	echo "  4. Run terraform apply to reconcile back to code"
 	echo ""
@@ -116,11 +115,15 @@ demo_drift_detect() {
 
 	echo ""
 	echo "⚠️  ACTION REQUIRED:"
-	echo "   Go to https://dash.cloudflare.com and manually change something"
-	echo "   in the $ZONE_NAME zone. Suggestions:"
-	echo "   - Add a random DNS record"
-	echo "   - Change a zone setting"
-	echo "   - Edit a Worker script"
+	echo "   Go to https://dash.cloudflare.com and, in the $ZONE_NAME zone,"
+	echo "   change something Terraform manages. Suggestions:"
+	echo "   - SSL/TLS > Edge Certificates > Minimum TLS Version: pick 1.0"
+	echo "   - Security > WAF > Custom rules: edit the 'Block path scanning'"
+	echo "     rule's expression, or disable it"
+	echo ""
+	echo "   Terraform only compares what it manages. Things you ADD (a new"
+	echo "   DNS record, a new rule in another ruleset) are invisible to it,"
+	echo "   so they never show up as drift."
 	echo ""
 	press_enter
 
@@ -256,6 +259,8 @@ demo_taint_replace() {
 	echo "Sometimes you need to force recreation of a resource."
 	echo "-replace=<address> plans a destroy + create for that one resource."
 	echo "(It replaces the older 'terraform taint', which edits state first.)"
+	echo "A Worker version can't be deleted, so the 'destroy' half only drops"
+	echo "the old version from state; it stays in the Worker's version history."
 	echo ""
 	press_enter
 
@@ -320,11 +325,13 @@ run_all() {
 
 	check_prereqs
 	demo_idempotency
+	demo_drift_detect
 	demo_state_inspect
 	demo_targeted
 	demo_plan_file
 	demo_refresh_only
 	demo_var_override
+	demo_taint_replace
 	demo_graph
 	demo_workspaces
 

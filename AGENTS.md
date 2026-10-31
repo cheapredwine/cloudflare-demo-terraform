@@ -30,27 +30,32 @@ live in README.md only.
 6. **`.sh` and `.ps1` twins stay in sync.** Scripts may only use resource
    addresses that exist in the `.tf` files (guarded). The `.sh` scripts pass
    the admin password to curl with `-K` (`admin_curl_config`), never `-u`.
-7. Run `make verify` before committing; it must be green.
+7. **`admin_allowlist_cidr` has no default** (guarded): the WAF challenges
+   everyone else on `admin.<zone>`, including the test and reset scripts.
+8. **The admin page escapes every value it renders** with `esc()` (guarded):
+   product and order fields come from the public, unauthenticated API.
+9. Run `make verify` before committing; it must be green. Don't hand-copy
+   counts (tests, resources) into docs; they drift.
 
 ## Layout
 
 ```
 providers.tf          provider pin; empty provider block (token from env)
 variables.tf          inputs + validation (account_id, zone_name, origins, allowlist, admin_password, failover toggle)
-zone.tf               data source for the existing zone
-dns.tf                root A record + api/admin AAAA 100:: placeholders
-storage.tf            R2, 2x KV, D1, queue
+zone.tf               data source for the existing zone + `check` that it's active
+dns.tf                root A record + api/admin AAAA 100:: placeholders (full names)
+storage.tf            R2, 2x KV, D1 (commented prevent_destroy example), queue
 workers.tf            4 explicit cloudflare_worker + cloudflare_worker_version pairs
-routes.tf             api.<zone>/* and admin.<zone>/* routes
+routes.tf             api.<zone>/* and admin.<zone>/* routes (depends_on version + D1 schema)
 queue-consumer.tf     orders queue -> order-processor Worker
 waf.tf                managed (CF Managed + OWASP, 949110 skip on admin.<zone>), custom, rate limit (Free-plan limits), redirects (commented Rule 2 HTTPS toggle: keep it)
 cdn.tf                cache rules for the origin-backed root host + cache_level / min_tls_version settings
-load_balancer.tf      1 monitor, primary + secondary pools, failover LB at app.<zone>
-ai-gateway.tf         demo-ai-gateway (products-api calls Workers AI through it)
+load_balancer.tf      1 monitor, primary + secondary pools, failover LB at app.<zone> (precondition: origins differ)
+ai-gateway.tf         demo-ai-gateway (products-api calls Workers AI through it; postpaid billing)
 migrations.tf         terraform_data: D1 schema (wrangler) + R2 empty at destroy
 upgrade-from-v4.tf    DNS moved blocks; documented removed+import path for Workers
 outputs.tf            URLs, IDs
-tests/main.tftest.hcl 26 mocked tests (incl. expect_failures negative tests); every input pinned
+tests/main.tftest.hcl mocked tests (incl. expect_failures negative tests); every input pinned
 scripts/tests/config-checks.sh  grep guards terraform test can't express
 workers/*.js          Worker code (admin-panel reads env.ADMIN_PASSWORD, constant-time compare)
 scripts/              lifecycle (run-demo), tests (test, smoke), demos, lib/env.{sh,ps1}; .sh + .ps1
@@ -65,13 +70,15 @@ secrets/              gitignored real secrets (README + *.example tracked)
   rule 949110 `6179ae15870a4bb7b2d480d4843b323c`. Phase `http_request_firewall_managed`.
 - Default IPs are RFC 5737 documentation addresses: the LB monitor reports
   every pool unhealthy until real origins are set.
+- Destroy doesn't revert `cloudflare_zone_setting`s or delete individual
+  `cloudflare_worker_version`s: the provider's Delete only drops them from state.
 - `make verify` = lint (shellcheck, shfmt, node --check, py_compile) + config
   guards + fmt + validate + `terraform test`.
 - Required token permissions: see README "Token permissions".
 
 ## State of the project
 
-- Fully migrated to v5 (v5.28.1, Terraform 1.17). Never applied on v5;
+- Fully migrated to v5 (v5.28.1; Terraform >= 1.11, tested with 1.17). Never applied on v5;
   a real read-only `plan` against the zone succeeds (all creates).
 - The old v4 deployment's state is effectively empty, so the v4 → v5 renames
   don't matter for this account.

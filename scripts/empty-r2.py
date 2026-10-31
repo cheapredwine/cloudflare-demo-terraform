@@ -27,13 +27,17 @@ def api(method, path="", body=None):
         data=json.dumps(body).encode() if body else None,
         headers=headers,
     )
+    # A timeout or network error returns {}, which main() treats as a failure
+    # (exit 1), so a hung request can't stall `terraform destroy` forever.
     try:
-        return json.loads(urllib.request.urlopen(req).read())
+        return json.loads(urllib.request.urlopen(req, timeout=30).read())
     except urllib.error.HTTPError as e:
         try:
             return json.loads(e.read())
         except (ValueError, OSError):
             return {}
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return {}
 
 
 def main():

@@ -85,7 +85,7 @@ async function handleOrders(request, env, corsHeaders) {
     const orderData = await request.json();
     
     // Validate order
-    if (!orderData.customer_id || !orderData.items) {
+    if (!orderData.customer_id || !Array.isArray(orderData.items) || orderData.items.length === 0) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -100,8 +100,7 @@ async function handleOrders(request, env, corsHeaders) {
     await env.ORDER_QUEUE.send({
       order_id: orderId,
       customer_id: orderData.customer_id,
-      items: orderData.items,
-      total: orderData.total,
+      items: orderData.items, // the order processor prices them from D1
       created_at: timestamp
     });
 
@@ -121,6 +120,28 @@ async function handleOrders(request, env, corsHeaders) {
 }
 
 async function handleUpload(request, env, corsHeaders) {
+  // GET /api/upload/<filename>: read a file back from R2. Served as a
+  // download (attachment + nosniff) so an uploaded HTML file can't run
+  // script on api.<zone>.
+  const key = new URL(request.url).pathname.slice('/api/upload/'.length);
+  if (request.method === 'GET' && key) {
+    const object = await env.UPLOADS.get(decodeURIComponent(key));
+    if (!object) {
+      return new Response(JSON.stringify({ error: 'File not found' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    return new Response(object.body, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment',
+        'X-Content-Type-Options': 'nosniff',
+      }
+    });
+  }
+
   if (request.method === 'POST') {
     try {
       let formData;
@@ -160,7 +181,7 @@ async function handleUpload(request, env, corsHeaders) {
         filename: filename,
         size: file.size,
         type: file.type,
-        url: `https://uploads.${env.ZONE_NAME}/${filename}`
+        url: `https://api.${env.ZONE_NAME}/api/upload/${encodeURIComponent(filename)}`
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
