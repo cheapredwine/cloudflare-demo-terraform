@@ -5,6 +5,9 @@
 
 $ErrorActionPreference = "Stop"
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+. (Join-Path $PSScriptRoot "../lib/env.ps1")
+
 function Show-Help {
 @"
 Terraform Demo Script

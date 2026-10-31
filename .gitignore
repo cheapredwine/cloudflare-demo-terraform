@@ -50,3 +50,9 @@ dist/
 .env
 *.pem
 .dev.vars
+__pycache__/
+
+# Local secrets store (see secrets/README.md)
+secrets/*
+!secrets/README.md
+!secrets/*.example

@@ -1,4 +1,4 @@
-.PHONY: help deploy deploy-demo reset destroy fresh smoke test latency analytics tf-all tf-state tf-drift
+.PHONY: lint help deploy deploy-demo reset destroy fresh smoke test verify fmt validate tftest latency analytics tf-all tf-state tf-drift
 
 help:
 	@printf "Cloudflare Demo Platform\n\n"
@@ -9,8 +9,13 @@ help:
 	@printf "  make destroy       Tear down infra\n"
 	@printf "  make fresh         Destroy + redeploy\n\n"
 	@printf "Validation:\n"
+	@printf "  make verify        lint + config guards + fmt + validate + terraform test (offline)\n"
+	@printf "  make lint          shellcheck/shfmt + JS/Python syntax checks\n"
+	@printf "  make fmt           terraform fmt -recursive -check\n"
+	@printf "  make validate      terraform validate\n"
+	@printf "  make tftest        terraform test (mocked, offline)\n"
 	@printf "  make smoke         Fast endpoint + queue consumer checks\n"
-	@printf "  make test          Full integration suite\n\n"
+	@printf "  make test          Full integration suite (requires deployed platform)\n\n"
 	@printf "Demos:\n"
 	@printf "  make latency       Cache HIT vs MISS latency demo\n"
 	@printf "  make analytics     Workers analytics traffic demo\n"
@@ -35,6 +40,27 @@ fresh:
 
 smoke:
 	./scripts/lifecycle/run-demo.sh test
+
+verify: lint config-checks fmt validate tftest
+
+lint:
+	shellcheck $$(git ls-files '*.sh')
+	@if command -v shfmt >/dev/null; then shfmt -d $$(git ls-files '*.sh'); else echo "shfmt not installed; skipping format check"; fi
+	@for f in $$(git ls-files 'workers/*.js'); do node --check "$$f" || exit 1; done
+	python3 -m py_compile scripts/empty-r2.py
+	@echo "lint: all checks passed"
+
+config-checks:
+	bash scripts/tests/config-checks.sh
+
+fmt:
+	terraform fmt -recursive -check
+
+validate:
+	terraform validate
+
+tftest:
+	terraform test
 
 test:
 	./scripts/tests/test.sh

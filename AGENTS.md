@@ -1,219 +1,73 @@
-# Cloudflare Demo Platform - Agent Guide
+# Cloudflare Demo Platform: agent guide
 
-## Project Overview
+Terraform example (Cloudflare provider v5) for WAF, CDN, load balancing, rate
+limiting, Workers and AI Gateway audiences. **The goal is to make Terraform
+obvious.** Prefer explicit, readable HCL over clever HCL. User-facing docs
+live in README.md only.
 
-Terraform-based e-commerce demo on Cloudflare's edge stack. Deploys 4 Workers, D1 DB, 2 KV namespaces, R2 bucket, and Queue to a single zone.
+## Rules for changes
 
-## Architecture
+1. **Obvious over clever.** No `for_each` / `try()` / dynamic tricks where
+   writing the blocks out reads better (that's why `workers.tf` repeats itself).
+   Every `.tf` file opens with a header naming the Terraform concept it shows.
+   Keep it true when you edit the file.
+2. **Terraform gets credentials only from the environment.** `CLOUDFLARE_API_TOKEN`
+   (the provider, wrangler and `scripts/empty-r2.py` all read it), and
+   `TF_VAR_admin_password` (a sensitive variable that becomes a `secret_text`
+   binding). Never add a token variable. Scripts fill both from the gitignored
+   `secrets/` store through `scripts/lib/env.sh` / `env.ps1`, without overriding
+   values that are already set (tested in config-checks). Never print them.
+3. **Every ruleset rule has a `ref`** (tested).
+4. **Tests stay on `command = plan`.** A mocked `apply` still runs the
+   `local-exec` provisioners against the real API (guarded in config-checks).
+   For unknown IDs at plan time, use `override_resource { override_during = plan }`.
+5. **Don't add `moved` blocks from `cloudflare_workers_script`.** The provider
+   can't move that type to `cloudflare_worker`; plan fails (verified, guarded).
+   DNS `cloudflare_record` → `cloudflare_dns_record` moves are verified to work.
+6. **`.sh` and `.ps1` twins stay in sync.**
+7. Run `make verify` before committing; it must be green.
 
-- **API Gateway Worker** (`api-gateway.js`) - Routes to products/orders/upload/auth via service bindings
-- **Products API Worker** (`products-api.js`) - CRUD + KV caching + seed endpoint
-- **Order Processor Worker** (`order-processor.js`) - Queue consumer, writes to D1, decrements stock
-- **Admin Panel Worker** (`admin-panel.js`) - Basic auth dashboard with DB init + seed buttons
-
-**Storage:**
-- D1: `demo-products` (products, orders, order_items tables)
-- KV: `demo-sessions` (auth), `demo-cache` (product list cache, 10 min TTL)
-- R2: `demo-platform-uploads` (file uploads)
-- Queue: `demo-order-processing` (async order workflow)
-
-**DNS:**
-- `api.{zone}` → API Gateway
-- `admin.{zone}` → Admin Panel
-
-## Admin Access
-
-- **URL:** `https://admin.{zone}`
-- **Username:** `admin`
-- **Password:** `demo123`
-
-After deploy, visit admin panel → click "Load Sample Data".
-
-## File Layout
+## Layout
 
 ```
-providers.tf             # Terraform + provider config
-variables.tf             # Input variables
-zone.tf                  # Existing zone data source
-dns.tf                   # DNS records
-storage.tf               # D1, KV, R2, Queue resources
-workers.tf               # Worker scripts + bindings
-routes.tf                # Worker routes
-queue-consumer.tf        # Queue consumer attach/detach automation
-migrations.tf            # D1 schema + R2 cleanup null_resources
-outputs.tf               # Terraform outputs
-workers/
-  api-gateway.js         # Request routing, CORS, service bindings to products_api
-  products-api.js        # CRUD, KV cache, seed endpoint
-  order-processor.js     # Queue batch handler, D1 writes, stock management
-  admin-panel.js         # HTML dashboard, basic auth (admin/demo123)
-db/schema.sql            # D1 schema (products, orders, order_items)
-scripts/lifecycle/       # Lifecycle scripts (run-demo.sh/ps1)
-scripts/tests/           # Integration scripts (test.sh/ps1)
-scripts/demos/           # Demo scripts (terraform-demo, latency, analytics)
-Makefile                 # Primary entrypoints (make deploy/test/destroy/etc.)
-terraform.tfvars         # Account credentials (gitignored)
+providers.tf          provider pin; empty provider block (token from env)
+variables.tf          inputs + validation (account_id, zone_name, origins, allowlist, admin_password, failover toggle)
+zone.tf               data source for the existing zone
+dns.tf                root A record + api/admin AAAA 100:: placeholders
+storage.tf            R2, 2x KV, D1, queue
+workers.tf            4 explicit cloudflare_worker + cloudflare_worker_version pairs
+routes.tf             api.<zone>/* and admin.<zone>/* routes
+queue-consumer.tf     orders queue -> order-processor Worker
+waf.tf                managed (CF Managed + OWASP, 949110 skip on /admin), custom, rate limit, redirects (commented Rule 2 HTTPS toggle: keep it)
+cdn.tf                cache rules + cache_level / min_tls_version settings
+load_balancer.tf      1 monitor, primary + secondary pools, failover LB at app.<zone>
+ai-gateway.tf         demo-ai-gateway (products-api calls Workers AI through it)
+migrations.tf         terraform_data: D1 schema (wrangler) + R2 empty at destroy
+upgrade-from-v4.tf    DNS moved blocks; documented removed+import path for Workers
+outputs.tf            URLs, IDs
+tests/main.tftest.hcl 25 mocked tests (incl. expect_failures negative tests)
+scripts/tests/config-checks.sh  grep guards terraform test can't express
+workers/*.js          Worker code (admin-panel reads env.ADMIN_PASSWORD, constant-time compare)
+scripts/              lifecycle (run-demo), tests (test, smoke), demos, lib/env.{sh,ps1}; .sh + .ps1
+secrets/              gitignored real secrets (README + *.example tracked)
+.github/workflows/verify.yml    CI = make verify, no secrets
 ```
 
-## Key Decisions
+## Key facts
 
-1. **Deprecated resources fixed** - Replaced `cloudflare_worker_script` with `cloudflare_workers_script` and `cloudflare_worker_route` with `cloudflare_workers_route` to eliminate deprecation warnings.
+- Official managed-ruleset IDs (from Cloudflare's Terraform WAF docs): CF Managed
+  `efb7b8c949ac4650a09736fc376e9aee`, OWASP Core `4814384a9e5d4991b9815dcfc25d2f1f`,
+  rule 949110 `6179ae15870a4bb7b2d480d4843b323c`. Phase `http_request_firewall_managed`.
+- Default IPs are RFC 5737 documentation addresses: the LB monitor reports
+  every pool unhealthy until real origins are set.
+- `make verify` = lint (shellcheck, shfmt, node --check, py_compile) + config
+  guards + fmt + validate + `terraform test`.
+- Required token permissions: see README "Token permissions".
 
-2. **Service binding pattern** - API Gateway uses `env.PRODUCTS_API.fetch()` to call products worker internally. Rewrites `/api/products` → `/products` before proxying. Strips host header to avoid errors.
+## State of the project
 
-3. **Cache invalidation** - Products API clears `products:all` KV key on any write (create/update/delete/seed). First GET after write shows `X-Products-Cache: MISS`, subsequent show `HIT`.
-
-4. **R2 bucket cleanup** - `null_resource.empty_r2_on_destroy` runs Python script to delete all objects before bucket destruction. Cloudflare refuses to delete non-empty R2 buckets.
-
-5. **D1 schema migration** - `null_resource.d1_schema` runs `wrangler d1 execute` with `IF NOT EXISTS` so it's idempotent. Triggers on schema file hash change.
-
-## API Endpoints
-
-```bash
-# Products
-curl https://api.{zone}/api/products              # GET (cached)
-curl -X POST https://api.{zone}/api/products \
-  -H "Content-Type: application/json" \
-  -d '{"name":"X","price":9.99,"stock":10}'
-curl https://api.{zone}/api/products/1            # GET single
-curl -X POST https://api.{zone}/api/products/seed # Load 5 sample products
-
-# Orders (queued async)
-curl -X POST https://api.{zone}/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_id":"demo","items":[{"product_id":1,"quantity":1,"unit_price":9.99}],"total":9.99}'
-
-# Auth
-curl -X POST https://api.{zone}/api/auth/login \
-  -d '{"email":"a@b.com","password":"pass"}'
-curl https://api.{zone}/api/auth/me \
-  -H "Authorization: Bearer <session-id>"
-
-# Upload
-curl -X POST https://api.{zone}/api/upload -F "file=@image.jpg"
-```
-
-## Terraform Commands
-
-```bash
-terraform init -upgrade          # Update providers
-terraform plan                    # Preview changes
-terraform apply                   # Deploy
-terraform apply -auto-approve     # Deploy without prompt
-terraform destroy                 # Remove all resources
-terraform state list              # List managed resources
-terraform output                  # Show URLs and IDs
-terraform output -json            # Machine-readable outputs
-terraform workspace list          # Show workspaces
-```
-
-## Demo Scripts
-
-Shell and PowerShell versions are maintained in parallel (`*.sh` and matching `*.ps1`). Update both files whenever script behavior changes.
-Canonical scripts live under `scripts/`. Preferred CLI entrypoints use `make`.
-
-### run-demo.sh — Platform Lifecycle
-Manages deploy, test, reset, destroy. Use for deploy and teardown.
-
-```bash
-make deploy                  # Deploy platform (terraform init + apply + smoke checks)
-make deploy-demo             # Deploy + run sample API calls
-make smoke                   # Verify endpoints responding
-make reset                   # Clear DB, reload sample data (keeps infra)
-make destroy                 # Tear down everything (with confirmation)
-make fresh                   # Destroy + redeploy
-./scripts/lifecycle/run-demo.ps1 deploy # PowerShell equivalent
-```
-
-### terraform-demo.sh — Terraform Concepts
-Showcases Terraform features. Assumes infrastructure is deployed.
-
-```bash
-./scripts/demos/terraform-demo.sh idempotency     # Apply twice, 0 changes second time
-./scripts/demos/terraform-demo.sh drift-detect    # Manual dashboard change → detect → reconcile
-./scripts/demos/terraform-demo.sh state-inspect   # List resources, show state, outputs
-./scripts/demos/terraform-demo.sh targeted        # Deploy single resource with -target
-./scripts/demos/terraform-demo.sh plan-file       # Save plan, review, apply exact plan
-./scripts/demos/terraform-demo.sh refresh-only    # Detect drift without changing
-./scripts/demos/terraform-demo.sh taint-replace   # Force recreation of resource
-./scripts/demos/terraform-demo.sh var-override staging.example.com # CLI variable override
-./scripts/demos/terraform-demo.sh graph           # Generate dependency graph
-./scripts/demos/terraform-demo.sh workspaces      # Create staging workspace
-make tf-all                                       # Run all demos sequentially (~10 min)
-./scripts/demos/terraform-demo.ps1 all            # PowerShell equivalent
-```
-
-### test.sh — Integration Validation
-Runs end-to-end API + admin validation, including queue consumer health and async order persistence checks.
-
-```bash
-make test                              # Full integration verification after deploy/changes
-./scripts/tests/test.ps1              # PowerShell equivalent
-```
-
-## Recommended Demo Workflow
-
-Deploy → Platform Demos → Terraform Demos → Teardown
-
-```bash
-# 1. Deploy platform
-make deploy
-
-# 2. Platform demos
-make smoke                  # Verify endpoints
-make deploy-demo            # Run sample API calls
-
-# 3. Terraform demos
-./scripts/demos/terraform-demo.sh state-inspect
-./scripts/demos/terraform-demo.sh drift-detect    # Requires manual dashboard change
-./scripts/demos/terraform-demo.sh idempotency
-./scripts/demos/terraform-demo.sh plan-file
-./scripts/demos/terraform-demo.sh refresh-only
-
-# 4. Teardown
-make destroy
-```
-
-**Total runtime:** ~5-10 minutes for full cycle.
-
-**Note:** `terraform-demo.sh` does NOT auto-teardown. Always end with `make destroy`.
-
-## Environment Setup
-
-Requires `terraform.tfvars`:
-```hcl
-cloudflare_api_token = "token"
-account_id          = "id"
-zone_name           = "domain.com"
-```
-
-Or set `TF_VAR_cloudflare_api_token` env var and only put `account_id` + `zone_name` in tfvars.
-
-**Token permissions needed:**
-- Zone:Edit, DNS:Edit, Zone Settings:Edit
-- Workers Scripts:Edit, Workers Routes:Edit
-- Account → R2:Edit
-- Account → Workers KV:Edit
-- Account → D1:Edit
-- Account → Queues:Edit
-
-*Note: Account-level permissions (R2, KV, D1, Queues) must be under "Account resources", not "Zone resources".*
-
-## Common Issues
-
-- **R2 destroy fails** - Bucket not empty. The `null_resource.empty_r2_on_destroy` handles this automatically.
-- **Worker routes 404** - Ensure DNS records exist and are proxied (orange cloud).
-- **D1 schema not applied** - Requires `wrangler` CLI installed and authenticated.
-- **Cache shows MISS always** - Check that KV namespace is bound correctly.
-
-## Cost
-
-~$3-5/month for Pro/Free plan (Workers free tier, D1 free tier, KV free tier, R2 free tier). Zone cost depends on plan.
-
-## Next Session Notes
-
-- All deprecated resources fixed, no warnings
-- Zone: jsherron.com 
-- Account: (test account)
-- Terraform provider v4.52.8
-- Run `make deploy` to deploy infrastructure
+- Fully migrated to v5 (v5.28.1, Terraform 1.17). Never applied on v5;
+  a real read-only `plan` against the zone succeeds (all creates).
+- The old v4 deployment's state is effectively empty, so the v4 → v5 renames
+  don't matter for this account.
+- Demo zone: jsherron.com, test account. Never commit account or zone IDs.

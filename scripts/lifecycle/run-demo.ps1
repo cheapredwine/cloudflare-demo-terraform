@@ -9,6 +9,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+. (Join-Path $PSScriptRoot "../lib/env.ps1")
+
 function Show-Help {
     Write-Host "🚀 Cloudflare Demo Platform Management"
     Write-Host "====================================="
@@ -194,7 +197,7 @@ function Show-SuccessMessage {
     Write-Host "🔑 Admin Access:"
     Write-Host "   URL:      https://admin.$script:ZoneName"
     Write-Host "   Username: admin"
-    Write-Host "   Password: demo123"
+    Write-Host "   Password: your admin_password (TF_VAR_admin_password or terraform.tfvars)"
     Write-Host ""
     Show-QuickStart
 }
@@ -220,7 +223,7 @@ function Reset-Data {
     }
 
     Write-Host "Clearing database and cache..."
-    $setupResp = Invoke-Http -Uri "https://admin.$script:ZoneName/setup" -Method "POST" -User "admin" -Password "demo123"
+    $setupResp = Invoke-Http -Uri "https://admin.$script:ZoneName/setup" -Method "POST" -User "admin" -Password $script:AdminPassword
     if ($setupResp.StatusCode -eq 200) {
         Write-Host "✅ Database reset"
     } else {
@@ -325,6 +328,13 @@ function Check-Prerequisites {
         Write-Host "Copy terraform.tfvars.example to terraform.tfvars and configure your settings"
         exit 1
     }
+    # Terraform, wrangler, and the R2 cleanup all read the token from the
+    # environment; it is never a Terraform variable or a tfvars entry.
+    if ($script:Action -in @("deploy", "destroy", "fresh") -and -not $env:CLOUDFLARE_API_TOKEN) {
+        Write-Host "❌ CLOUDFLARE_API_TOKEN is not set"
+        Write-Host '   Put it in secrets/cloudflare_api_token, or set $env:CLOUDFLARE_API_TOKEN'
+        exit 1
+    }
 }
 
 Parse-Args -InputArgs $CliArgs
@@ -338,6 +348,9 @@ Write-Host "🚀 Cloudflare Demo Platform - $($script:Action)"
 Write-Host "====================================="
 
 Check-Prerequisites
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
 
 if ((Needs-ZoneName) -and [string]::IsNullOrWhiteSpace($script:ZoneName)) {
     $script:ZoneName = Get-TfvarsValue "zone_name"

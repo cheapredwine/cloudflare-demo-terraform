@@ -1,93 +1,139 @@
-resource "cloudflare_workers_script" "api_gateway" {
-  account_id = var.account_id
-  name       = "demo-api-gateway"
-  content    = file("${path.module}/workers/api-gateway.js")
-  module     = true
+# Workers
+#
+# Terraform concepts in this file:
+#   - Resource references: `cloudflare_d1_database.products.id` both passes a
+#     value and tells Terraform to create the database before the Worker.
+#   - A local value (`local.compatibility_date`) to avoid repeating a setting.
+#   - A sensitive variable flowing into a secret binding (admin panel).
+#
+# Provider v5 splits a Worker into two resources:
+#   cloudflare_worker          the Worker itself (name, logging settings)
+#   cloudflare_worker_version  its code + bindings; deploy = true sends
+#                              100% of traffic to this version on apply
+#
+# Each Worker below is written out in full on purpose: repetitive, but you can
+# read any one block and see everything that Worker gets.
 
-  kv_namespace_binding {
-    name         = "SESSIONS"
-    namespace_id = cloudflare_workers_kv_namespace.sessions.id
-  }
-
-  r2_bucket_binding {
-    name        = "UPLOADS"
-    bucket_name = cloudflare_r2_bucket.uploads.name
-  }
-
-  d1_database_binding {
-    name        = "DB"
-    database_id = cloudflare_d1_database.products.id
-  }
-
-  queue_binding {
-    binding = "ORDER_QUEUE"
-    queue   = cloudflare_queue.orders.name
-  }
-
-  service_binding {
-    name        = "PRODUCTS_API"
-    service     = cloudflare_workers_script.products_api.name
-    environment = "production"
-  }
-
-  plain_text_binding {
-    name = "ZONE_NAME"
-    text = var.zone_name
-  }
+locals {
+  # One compatibility date for every Worker. Bump it deliberately and re-test.
+  compatibility_date = "2025-09-01"
 }
 
-resource "cloudflare_workers_script" "products_api" {
-  account_id = var.account_id
-  name       = "demo-products-api"
-  content    = file("${path.module}/workers/products-api.js")
-  module     = true
+# --- API gateway: public entry point at api.<zone> ------------------------------
 
-  d1_database_binding {
-    name        = "DB"
-    database_id = cloudflare_d1_database.products.id
-  }
-
-  kv_namespace_binding {
-    name         = "CACHE"
-    namespace_id = cloudflare_workers_kv_namespace.cache.id
-  }
+resource "cloudflare_worker" "api_gateway" {
+  account_id    = var.account_id
+  name          = "demo-api-gateway"
+  observability = { enabled = true } # Workers Logs in the dashboard
 }
 
-resource "cloudflare_workers_script" "order_processor" {
-  account_id = var.account_id
-  name       = "demo-order-processor"
-  content    = file("${path.module}/workers/order-processor.js")
-  module     = true
+resource "cloudflare_worker_version" "api_gateway" {
+  account_id         = var.account_id
+  worker_id          = cloudflare_worker.api_gateway.id
+  compatibility_date = local.compatibility_date
+  main_module        = "api-gateway.js"
+  deploy             = true
 
-  d1_database_binding {
-    name        = "DB"
-    database_id = cloudflare_d1_database.products.id
-  }
+  modules = [{
+    name         = "api-gateway.js"
+    content_file = "${path.module}/workers/api-gateway.js"
+    content_type = "application/javascript+module"
+  }]
 
-  queue_binding {
-    binding = "ORDER_QUEUE"
-    queue   = cloudflare_queue.orders.name
-  }
+  # Each binding becomes `env.<NAME>` inside the Worker.
+  bindings = [
+    { type = "kv_namespace", name = "SESSIONS", namespace_id = cloudflare_workers_kv_namespace.sessions.id },
+    { type = "r2_bucket", name = "UPLOADS", bucket_name = cloudflare_r2_bucket.uploads.name },
+    { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
+    { type = "queue", name = "ORDER_QUEUE", queue_name = cloudflare_queue.orders.queue_name },
+    { type = "service", name = "PRODUCTS_API", service = cloudflare_worker.products_api.name },
+    { type = "plain_text", name = "ZONE_NAME", text = var.zone_name },
+  ]
 }
 
-resource "cloudflare_workers_script" "admin_panel" {
-  account_id = var.account_id
-  name       = "demo-admin-panel"
-  content    = file("${path.module}/workers/admin-panel.js")
-  module     = true
+# --- Products API: private, reached only through the gateway's service binding -
 
-  d1_database_binding {
-    name        = "DB"
-    database_id = cloudflare_d1_database.products.id
-  }
+resource "cloudflare_worker" "products_api" {
+  account_id    = var.account_id
+  name          = "demo-products-api"
+  observability = { enabled = true }
+}
 
-  kv_namespace_binding {
-    name         = "SESSIONS"
-    namespace_id = cloudflare_workers_kv_namespace.sessions.id
-  }
+resource "cloudflare_worker_version" "products_api" {
+  account_id         = var.account_id
+  worker_id          = cloudflare_worker.products_api.id
+  compatibility_date = local.compatibility_date
+  main_module        = "products-api.js"
+  deploy             = true
 
-  plain_text_binding {
-    name = "ZONE_NAME"
-    text = var.zone_name
-  }
+  modules = [{
+    name         = "products-api.js"
+    content_file = "${path.module}/workers/products-api.js"
+    content_type = "application/javascript+module"
+  }]
+
+  bindings = [
+    { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
+    { type = "kv_namespace", name = "CACHE", namespace_id = cloudflare_workers_kv_namespace.cache.id },
+    { type = "ai", name = "AI" }, # Workers AI, called through the AI Gateway below
+    { type = "plain_text", name = "AI_GATEWAY_ID", text = cloudflare_ai_gateway.demo.id },
+  ]
+}
+
+# --- Order processor: consumes the orders queue (see queue-consumer.tf) ---------
+
+resource "cloudflare_worker" "order_processor" {
+  account_id    = var.account_id
+  name          = "demo-order-processor"
+  observability = { enabled = true }
+}
+
+resource "cloudflare_worker_version" "order_processor" {
+  account_id         = var.account_id
+  worker_id          = cloudflare_worker.order_processor.id
+  compatibility_date = local.compatibility_date
+  main_module        = "order-processor.js"
+  deploy             = true
+
+  modules = [{
+    name         = "order-processor.js"
+    content_file = "${path.module}/workers/order-processor.js"
+    content_type = "application/javascript+module"
+  }]
+
+  bindings = [
+    { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
+    { type = "queue", name = "ORDER_QUEUE", queue_name = cloudflare_queue.orders.queue_name },
+  ]
+}
+
+# --- Admin panel: admin.<zone>, Basic auth ---------------------------------------
+
+resource "cloudflare_worker" "admin_panel" {
+  account_id    = var.account_id
+  name          = "demo-admin-panel"
+  observability = { enabled = true }
+}
+
+resource "cloudflare_worker_version" "admin_panel" {
+  account_id         = var.account_id
+  worker_id          = cloudflare_worker.admin_panel.id
+  compatibility_date = local.compatibility_date
+  main_module        = "admin-panel.js"
+  deploy             = true
+
+  modules = [{
+    name         = "admin-panel.js"
+    content_file = "${path.module}/workers/admin-panel.js"
+    content_type = "application/javascript+module"
+  }]
+
+  bindings = [
+    { type = "d1", name = "DB", id = cloudflare_d1_database.products.id },
+    { type = "kv_namespace", name = "SESSIONS", namespace_id = cloudflare_workers_kv_namespace.sessions.id },
+    { type = "plain_text", name = "ZONE_NAME", text = var.zone_name },
+    # secret_text: encrypted at rest and never readable back from the API.
+    # var.admin_password is `sensitive`, so Terraform also hides it in plan output.
+    { type = "secret_text", name = "ADMIN_PASSWORD", text = var.admin_password },
+  ]
 }

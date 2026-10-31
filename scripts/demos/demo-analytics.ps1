@@ -5,6 +5,9 @@
 
 $ErrorActionPreference = "Stop"
 
+# Load credentials from the gitignored secrets/ store (see secrets/README.md).
+. (Join-Path $PSScriptRoot "../lib/env.ps1")
+
 function Get-TfvarsValue {
     param([string]$Key)
     if (-not (Test-Path "terraform.tfvars")) { return "" }
@@ -66,6 +69,13 @@ if ([string]::IsNullOrWhiteSpace($zoneName)) {
 
 $api = "https://api.$zoneName"
 $admin = "https://admin.$zoneName"
+
+# Admin password: TF_VAR_admin_password, else admin_password in terraform.tfvars.
+$script:AdminPassword = if ($env:TF_VAR_admin_password) { $env:TF_VAR_admin_password } else { Get-TfvarsValue "admin_password" }
+if ([string]::IsNullOrWhiteSpace($script:AdminPassword)) {
+    Write-Host "ERROR: put the admin password in secrets/admin_password (or set TF_VAR_admin_password)"
+    exit 1
+}
 $rounds = if ($args.Count -gt 0) { [int]$args[0] } else { 3 }
 
 Write-Host "================================================"
@@ -130,10 +140,10 @@ for ($i = 1; $i -le $rounds; $i++) {
     Write-Host "done"
 
     Write-Host -NoNewline "  Admin... "
-    Invoke-Q -Uri "$admin/" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/stats" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/products" -User "admin" -Password "demo123"
-    Invoke-Q -Uri "$admin/api/orders" -User "admin" -Password "demo123"
+    Invoke-Q -Uri "$admin/" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/stats" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/products" -User "admin" -Password $script:AdminPassword
+    Invoke-Q -Uri "$admin/api/orders" -User "admin" -Password $script:AdminPassword
     Invoke-Q -Uri "$admin/" -User "admin" -Password "wrongpassword"
     Write-Host "done"
 

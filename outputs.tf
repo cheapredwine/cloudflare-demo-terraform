@@ -1,27 +1,39 @@
+# Outputs
+#
+# Terraform concept: `output` blocks print values after apply and let scripts
+# read them (`terraform output -raw api_gateway_url`); see the state-inspect demo.
+
 output "zone_id" {
-  value = data.cloudflare_zone.main.id
+  description = "Demo zone ID"
+  value       = data.cloudflare_zone.main.id
 }
 
 output "nameservers" {
-  value = data.cloudflare_zone.main.name_servers
+  description = "Cloudflare nameservers assigned to the zone"
+  value       = data.cloudflare_zone.main.name_servers
 }
 
 output "api_gateway_url" {
-  value = "https://api.${var.zone_name}"
+  description = "Public URL of the API gateway Worker"
+  value       = "https://api.${var.zone_name}"
 }
 
 output "admin_panel_url" {
-  value = "https://admin.${var.zone_name}"
+  description = "Public URL of the admin panel Worker"
+  value       = "https://admin.${var.zone_name}"
 }
 
 output "d1_database_id" {
-  value = cloudflare_d1_database.products.id
+  description = "D1 products database ID"
+  value       = cloudflare_d1_database.products.id
 }
 
 output "kv_namespace_sessions" {
-  value = cloudflare_workers_kv_namespace.sessions.id
+  description = "KV namespace ID for sessions"
+  value       = cloudflare_workers_kv_namespace.sessions.id
 }
 
 output "r2_bucket_name" {
-  value = cloudflare_r2_bucket.uploads.name
+  description = "R2 uploads bucket name"
+  value       = cloudflare_r2_bucket.uploads.name
 }
