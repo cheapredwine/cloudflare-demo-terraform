@@ -34,8 +34,16 @@ live in README.md only.
    everyone else on `admin.<zone>`, including the test and reset scripts.
 8. **The admin page escapes every value it renders** with `esc()` (guarded):
    product and order fields come from the public, unauthenticated API.
-9. Run `make verify` before committing; it must be green. Don't hand-copy
-   counts (tests, resources) into docs; they drift.
+9. **Every binding in `workers.tf` is read by its Worker** as `env.<NAME>`
+   (guarded in config-checks). A Worker that only *consumes* a queue gets no
+   queue binding (the consumer is `cloudflare_queue_consumer`); a binding is
+   for sending. The `CACHE` KV namespace is shared: products-api writes
+   `products:all`, order-processor and admin-panel delete it.
+10. **Workers answer bad input with 400 and never leak `error.message`** in a
+    500 body (log it with `console.error`; it shows up in Workers Logs). D1
+    affected-row counts live at `result.meta.changes`, not `result.changes`.
+11. Run `make verify` before committing; it must be green. Don't hand-copy
+    counts (tests, resources) into docs; they drift.
 
 ## Layout
 
@@ -45,7 +53,7 @@ variables.tf          inputs + validation (account_id, zone_name, origins, allow
 zone.tf               data source for the existing zone + `check` that it's active
 dns.tf                root A record + api/admin AAAA 100:: placeholders (full names)
 storage.tf            R2, 2x KV, D1 (commented prevent_destroy example), queue
-workers.tf            4 explicit cloudflare_worker + cloudflare_worker_version pairs
+workers.tf            4 explicit cloudflare_worker + cloudflare_worker_version pairs (only bindings the code reads)
 routes.tf             api.<zone>/* and admin.<zone>/* routes (depends_on version + D1 schema)
 queue-consumer.tf     orders queue -> order-processor Worker
 waf.tf                managed (CF Managed + OWASP, 949110 skip on admin.<zone>), custom, rate limit (Free-plan limits), redirects (commented Rule 2 HTTPS toggle: keep it)
@@ -61,6 +69,7 @@ workers/*.js          Worker code (admin-panel reads env.ADMIN_PASSWORD, constan
 scripts/              lifecycle (run-demo), tests (test, smoke), demos, lib/env.{sh,ps1}; .sh + .ps1
 secrets/              gitignored real secrets (README + *.example tracked)
 .github/workflows/verify.yml    CI = make verify, no secrets
+.github/dependabot.yml          weekly PRs for the SHA-pinned actions (provider bumps stay manual: see providers.tf)
 ```
 
 ## Key facts

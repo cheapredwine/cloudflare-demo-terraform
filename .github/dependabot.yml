@@ -1,0 +1,16 @@
+# Keeps the SHA-pinned actions in .github/workflows current: a pinned SHA is
+# safe but never moves on its own, so Dependabot opens the bump PRs.
+#
+# The Terraform provider is deliberately not managed here. The lock file
+# carries checksums for five platforms (see providers.tf), and an automated
+# bump would record only the runner's platform. Bump it by hand with
+# `terraform init -upgrade` followed by the `terraform providers lock` command
+# in providers.tf.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

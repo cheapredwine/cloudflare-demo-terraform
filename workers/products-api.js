@@ -19,20 +19,20 @@ export default {
     try {
       const path = url.pathname;
       const method = request.method;
+      // Anchored: only an all-digit id matches, so /products/12abc is a 404
+      // rather than a lookup for "12abc".
+      const idMatch = path.match(/^\/products\/(\d+)$/);
 
       if (path === '/products' && method === 'GET') {
         return await getProducts(env, corsHeaders);
       } else if (path === '/products' && method === 'POST') {
         return await createProduct(request, env, corsHeaders);
-      } else if (path.match(/\/products\/\d+/) && method === 'GET') {
-        const id = path.split('/').pop();
-        return await getProduct(id, env, corsHeaders);
-      } else if (path.match(/\/products\/\d+/) && method === 'PUT') {
-        const id = path.split('/').pop();
-        return await updateProduct(id, request, env, corsHeaders);
-      } else if (path.match(/\/products\/\d+/) && method === 'DELETE') {
-        const id = path.split('/').pop();
-        return await deleteProduct(id, env, corsHeaders);
+      } else if (idMatch && method === 'GET') {
+        return await getProduct(idMatch[1], env, corsHeaders);
+      } else if (idMatch && method === 'PUT') {
+        return await updateProduct(idMatch[1], request, env, corsHeaders);
+      } else if (idMatch && method === 'DELETE') {
+        return await deleteProduct(idMatch[1], env, corsHeaders);
       } else if (path === '/products/seed' && method === 'POST') {
         return await seedProducts(env, corsHeaders);
       } else if (path === '/products/summary' && method === 'GET') {
@@ -44,16 +44,38 @@ export default {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     } catch (error) {
-      return new Response(JSON.stringify({ 
-        error: 'Internal server error',
-        message: error.message 
-      }), {
+      // Details go to Workers Logs, not to the client.
+      console.error('products api error', error);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
   }
 };
+
+// A body that isn't a JSON object is the client's mistake (400), not a
+// server error. Returns null for invalid JSON, arrays and scalars.
+async function readJson(request) {
+  try {
+    const data = await request.json();
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+// Optional integer fields (stock) must be a non-negative whole number when sent.
+function isCount(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function badRequest(message, corsHeaders) {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 400,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
 
 async function getProducts(env, corsHeaders) {
   // Check cache first
@@ -116,16 +138,18 @@ async function getProduct(id, env, corsHeaders) {
 }
 
 async function createProduct(request, env, corsHeaders) {
-  const data = await request.json();
-  
-  // Validate required fields
-  if (!data.name || !data.price) {
-    return new Response(JSON.stringify({ 
-      error: 'Missing required fields: name, price' 
-    }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+  const data = await readJson(request);
+  if (!data) {
+    return badRequest('Request body must be a JSON object', corsHeaders);
+  }
+
+  // Validate types, not just presence: "19.99" as a string must not land in
+  // the DECIMAL column, nor "abc" in the INTEGER one. price 0 is allowed.
+  if (typeof data.name !== 'string' || !data.name || typeof data.price !== 'number' || !(data.price >= 0)) {
+    return badRequest('Missing required fields: name (string), price (a non-negative number)', corsHeaders);
+  }
+  if (data.stock !== undefined && !isCount(data.stock)) {
+    return badRequest('stock must be a non-negative integer', corsHeaders);
   }
 
   const now = new Date().toISOString();
@@ -163,7 +187,16 @@ async function createProduct(request, env, corsHeaders) {
 }
 
 async function updateProduct(id, request, env, corsHeaders) {
-  const data = await request.json();
+  const data = await readJson(request);
+  if (!data) {
+    return badRequest('Request body must be a JSON object', corsHeaders);
+  }
+  if (data.price !== undefined && (typeof data.price !== 'number' || !(data.price >= 0))) {
+    return badRequest('price must be a non-negative number', corsHeaders);
+  }
+  if (data.stock !== undefined && !isCount(data.stock)) {
+    return badRequest('stock must be a non-negative integer', corsHeaders);
+  }
   const now = new Date().toISOString();
   
   // Build dynamic update query
@@ -208,8 +241,9 @@ async function updateProduct(id, request, env, corsHeaders) {
   `);
   
   const result = await stmt.bind(...values).run();
-  
-  if (result.changes === 0) {
+
+  // D1 reports affected rows under meta (result.changes doesn't exist).
+  if (result.meta.changes === 0) {
     return new Response(JSON.stringify({ error: 'Product not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -230,8 +264,8 @@ async function updateProduct(id, request, env, corsHeaders) {
 async function deleteProduct(id, env, corsHeaders) {
   const stmt = env.DB.prepare('DELETE FROM products WHERE id = ?');
   const result = await stmt.bind(id).run();
-  
-  if (result.changes === 0) {
+
+  if (result.meta.changes === 0) {
     return new Response(JSON.stringify({ error: 'Product not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -290,35 +324,36 @@ async function seedProducts(env, corsHeaders) {
   const now = new Date().toISOString();
   let created = 0;
 
+  // Idempotent: a sample product is inserted only if no product with that
+  // name exists, so clicking "Load Sample Data" twice doesn't duplicate the
+  // catalog. (The schema has no UNIQUE constraint on name; real products may
+  // legitimately share one.)
   for (const product of sampleProducts) {
-    try {
-      const stmt = env.DB.prepare(`
-        INSERT INTO products (name, description, price, category, stock, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      await stmt.bind(
-        product.name,
-        product.description,
-        product.price,
-        product.category,
-        product.stock,
-        now,
-        now
-      ).run();
-      
-      created++;
-    } catch (error) {
-      // Product might already exist, continue
-      console.log(`Skipped ${product.name}: ${error.message}`);
-    }
+    const result = await env.DB.prepare(`
+      INSERT INTO products (name, description, price, category, stock, created_at, updated_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = ?)
+    `).bind(
+      product.name,
+      product.description,
+      product.price,
+      product.category,
+      product.stock,
+      now,
+      now,
+      product.name
+    ).run();
+
+    created += result.meta.changes ?? 0;
   }
 
   // Clear cache
   await env.CACHE.delete('products:all');
 
   return new Response(JSON.stringify({
-    message: `Seeded ${created} products`,
+    message: `Seeded ${created} products (${sampleProducts.length - created} already present)`,
+    created,
+    skipped: sampleProducts.length - created,
     timestamp: now
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }

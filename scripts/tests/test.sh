@@ -174,11 +174,30 @@ req -X POST "$API/api/products/seed"
 assert_status "seed returns 200" 200 "$(get_status)"
 assert_contains "seed confirms products created" "Seeded" "$(get_body)"
 
+# Seeding again must not duplicate the catalog
+req -X POST "$API/api/products/seed"
+assert_status "second seed returns 200" 200 "$(get_status)"
+assert_contains "second seed creates nothing" '"created":0' "$(get_body)"
+
 # List
 req "$API/api/products"
 assert_status "list products returns 200" 200 "$(get_status)"
 assert_contains "list returns products array" "products" "$(get_body)"
 assert_contains "list includes seeded product" "Coffee" "$(get_body)"
+
+# Bad input is a 400, not a 500
+req -X POST "$API/api/products" -H "Content-Type: application/json" -d '{not json'
+assert_status "malformed JSON returns 400" 400 "$(get_status)"
+req -X POST "$API/api/products" -H "Content-Type: application/json" -d '{"name":"Bad","price":"9.99"}'
+assert_status "string price returns 400" 400 "$(get_status)"
+
+# Unknown ids: 404 on every method, and non-numeric ids never reach the database
+status=$(http_status -X PUT -H "Content-Type: application/json" -d '{"stock":1}' "$API/api/products/999999999")
+assert_status "update of unknown product returns 404" 404 "$status"
+status=$(http_status -X DELETE "$API/api/products/999999999")
+assert_status "delete of unknown product returns 404" 404 "$status"
+status=$(http_status "$API/api/products/12abc")
+assert_status "non-numeric product id returns 404" 404 "$status"
 
 # Cache header
 LIST_HEADERS=$(curl -sv --max-time 15 "$API/api/products" 2>&1)

@@ -37,16 +37,26 @@ export default {
         });
       }
     } catch (error) {
-      return new Response(JSON.stringify({ 
-        error: 'Internal server error',
-        message: error.message 
-      }), {
+      // Details go to Workers Logs, not to the client.
+      console.error('api gateway error', error);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
   }
 };
+
+// A body that isn't a JSON object is the client's mistake (400), not a
+// server error. Returns null for invalid JSON, arrays and scalars.
+async function readJson(request) {
+  try {
+    const data = await request.json();
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
 
 async function handleProducts(request, env, corsHeaders) {
   // Rewrite /api/products* -> /products* and proxy to products worker
@@ -82,10 +92,10 @@ async function handleProducts(request, env, corsHeaders) {
 
 async function handleOrders(request, env, corsHeaders) {
   if (request.method === 'POST') {
-    const orderData = await request.json();
-    
+    const orderData = await readJson(request);
+
     // Validate order
-    if (!orderData.customer_id || !Array.isArray(orderData.items) || orderData.items.length === 0) {
+    if (!orderData || !orderData.customer_id || !Array.isArray(orderData.items) || orderData.items.length === 0) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -186,10 +196,8 @@ async function handleUpload(request, env, corsHeaders) {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     } catch (error) {
-      return new Response(JSON.stringify({ 
-        error: 'Upload failed',
-        message: error.message 
-      }), {
+      console.error('upload failed', error);
+      return new Response(JSON.stringify({ error: 'Upload failed' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -206,8 +214,14 @@ async function handleAuth(request, env, corsHeaders) {
   const url = new URL(request.url);
   
   if (request.method === 'POST' && url.pathname === '/api/auth/login') {
-    const loginData = await request.json();
-    
+    const loginData = await readJson(request);
+    if (!loginData) {
+      return new Response(JSON.stringify({ error: 'Request body must be a JSON object' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // Demo auth - accept any email/password
     if (loginData.email && loginData.password) {
       const sessionId = crypto.randomUUID();

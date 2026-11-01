@@ -113,14 +113,51 @@ run "workers_defined" {
 run "worker_bindings" {
   command = plan
 
+  # Pin both KV namespace IDs at plan time so the assertions can tell the
+  # cache namespace from the sessions namespace.
+  override_resource {
+    target          = cloudflare_workers_kv_namespace.cache
+    override_during = plan
+    values          = { id = "mock-kv-cache" }
+  }
+
+  override_resource {
+    target          = cloudflare_workers_kv_namespace.sessions
+    override_during = plan
+    values          = { id = "mock-kv-sessions" }
+  }
+
   assert {
-    error_message = "api_gateway should carry 6 bindings (KV, R2, D1, queue, service, zone name)"
-    condition     = length(cloudflare_worker_version.api_gateway.bindings) == 6
+    error_message = "api_gateway should carry 5 bindings (KV, R2, queue, service, zone name)"
+    condition     = length(cloudflare_worker_version.api_gateway.bindings) == 5
   }
 
   assert {
     error_message = "products_api should carry 4 bindings (D1, KV, AI, gateway id)"
     condition     = length(cloudflare_worker_version.products_api.bindings) == 4
+  }
+
+  assert {
+    # The products API writes the cached list; the order processor and the
+    # admin panel invalidate it, so all three must point at the same namespace.
+    error_message = "products_api, order_processor and admin_panel should share the CACHE KV namespace"
+    condition = alltrue([
+      for v in [cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] :
+      anytrue([for b in v.bindings : b.type == "kv_namespace" && b.name == "CACHE" && b.namespace_id == "mock-kv-cache"])
+    ])
+  }
+
+  assert {
+    error_message = "api_gateway should hold the SESSIONS namespace (it's the only Worker that reads sessions)"
+    condition     = anytrue([for b in cloudflare_worker_version.api_gateway.bindings : b.type == "kv_namespace" && b.name == "SESSIONS" && b.namespace_id == "mock-kv-sessions"])
+  }
+
+  assert {
+    error_message = "only the gateway should hold the SESSIONS namespace; nothing else reads sessions"
+    condition = alltrue([
+      for v in [cloudflare_worker_version.products_api, cloudflare_worker_version.order_processor, cloudflare_worker_version.admin_panel] :
+      !anytrue([for b in v.bindings : b.type == "kv_namespace" && b.namespace_id == "mock-kv-sessions"])
+    ])
   }
 
   assert {
