@@ -12,7 +12,8 @@ every common binding type, and Workers AI through AI Gateway. Built on the
 
 **Status:** checked offline (`make verify`) and with a real read-only
 `terraform plan` against a live zone. It has **not** been applied end to end
-on provider v5, so the API may still reject something the plan accepted.
+on provider v5, so the API may still reject something the plan accepted
+(the first apply is tracked in [`PENDING-REVIEW.md`](./PENDING-REVIEW.md)).
 
 ## Find your topic
 
