@@ -23,7 +23,7 @@ mock_provider "cloudflare" {
 # Every input is set here, so the tests don't depend on your local
 # terraform.tfvars (terraform test reads it) or TF_VAR_* environment.
 variables {
-  admin_password         = "test-admin-password-not-real"
+  admin_password         = "dummy-pw-1234"
   account_id             = "01a7362d546811e79dd32d0171c0d0e6"
   zone_name              = "demo-platform.example"
   origin_ipv4            = "203.0.113.10"
