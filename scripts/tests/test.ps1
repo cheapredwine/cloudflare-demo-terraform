@@ -153,10 +153,26 @@ $seed = Invoke-Http -Uri "$api/api/products/seed" -Method "POST"
 Assert-Status "seed returns 200" 200 $seed.StatusCode
 Assert-Contains "seed confirms products created" "Seeded" $seed.Content
 
+# Seeding again must not duplicate the catalog
+$seedAgain = Invoke-Http -Uri "$api/api/products/seed" -Method "POST"
+Assert-Status "second seed returns 200" 200 $seedAgain.StatusCode
+Assert-Contains "second seed creates nothing" '"created":0' $seedAgain.Content
+
 $list = Invoke-Http -Uri "$api/api/products"
 Assert-Status "list products returns 200" 200 $list.StatusCode
 Assert-Contains "list returns products array" "products" $list.Content
 Assert-Contains "list includes seeded product" "Coffee" $list.Content
+
+# Bad input is a 400, not a 500
+$badJson = Invoke-Http -Uri "$api/api/products" -Method "POST" -ContentType "application/json" -Body '{not json'
+Assert-Status "malformed JSON returns 400" 400 $badJson.StatusCode
+$badPrice = Invoke-Http -Uri "$api/api/products" -Method "POST" -ContentType "application/json" -Body '{"name":"Bad","price":"9.99"}'
+Assert-Status "string price returns 400" 400 $badPrice.StatusCode
+
+# Unknown ids: 404 on every method, and non-numeric ids never reach the database
+Assert-Status "update of unknown product returns 404" 404 ((Invoke-Http -Uri "$api/api/products/999999999" -Method "PUT" -ContentType "application/json" -Body '{"stock":1}').StatusCode)
+Assert-Status "delete of unknown product returns 404" 404 ((Invoke-Http -Uri "$api/api/products/999999999" -Method "DELETE").StatusCode)
+Assert-Status "non-numeric product id returns 404" 404 ((Invoke-Http -Uri "$api/api/products/12abc").StatusCode)
 
 $headerKeys = @($list.Headers.Keys | ForEach-Object { $_.ToLowerInvariant() })
 if ($headerKeys -contains "x-products-cache") {

@@ -159,6 +159,43 @@ if not sql or sql != js:
     sys.exit(1)
 PY
 
+# Every binding a Worker version declares must be read by that Worker's code
+# (`env.<NAME>`). workers.tf promises that one block shows everything a
+# Worker gets; a binding the code never touches makes that promise false,
+# and it once hid an unused D1 binding on the gateway for months.
+python3 - <<'PY' || fail "workers.tf declares a binding its Worker code never reads (see above)"
+import pathlib, re, sys
+ok = True
+tf = pathlib.Path("workers.tf").read_text()
+versions = re.findall(r'resource "cloudflare_worker_version" "(\w+)" \{(.*?)\n\}', tf, re.S)
+if not versions:
+    print("no cloudflare_worker_version blocks found in workers.tf", file=sys.stderr); sys.exit(1)
+def strip_comments(text, line_marker):
+    # Whole-line comments and /* */ blocks only: a trailing `//` may be part
+    # of a URL such as `https://api.${env.ZONE_NAME}`.
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith(line_marker))
+for name, body in versions:
+    body = strip_comments(body, "#")
+    module = re.search(r'content_file\s*=\s*"\$\{path\.module\}/(workers/[\w.-]+\.js)"', body)
+    if not module:
+        print(f"{name}: no content_file under workers/", file=sys.stderr); ok = False; continue
+    code = strip_comments(pathlib.Path(module.group(1)).read_text(), "//")
+    blist = re.search(r"bindings\s*=\s*\[(.*?)\n\s*\]", body, re.S)
+    if not blist:
+        print(f"{name}: no bindings list found", file=sys.stderr); ok = False; continue
+    # One `{ ... }` per binding, keys in any order; every element must name itself.
+    elements = re.findall(r"\{[^{}]*\}", blist.group(1), re.S)
+    bindings = [m.group(1) for e in elements if (m := re.search(r'\bname\s*=\s*"(\w+)"', e))]
+    if len(bindings) != len(elements):
+        print(f"{name}: {len(elements)} bindings but only {len(bindings)} have a name", file=sys.stderr); ok = False; continue
+    for b in bindings:
+        if not re.search(r'\benv\.' + re.escape(b) + r'\b', code):
+            print(f"{name}: binding {b} is never read as env.{b} in {module.group(1)}", file=sys.stderr)
+            ok = False
+sys.exit(0 if ok else 1)
+PY
+
 # The secrets loader must load from secrets/ files and never override a value
 # already set in the environment. Exercised in a scratch copy of the layout.
 scratch=$(mktemp -d)

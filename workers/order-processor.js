@@ -82,6 +82,17 @@ async function processOrder(orderData, env) {
   }
   await env.DB.batch(statements);
 
+  // Stock changed, so the products API's cached list (same KV namespace,
+  // key products:all) is stale: drop it so the next GET reads from D1.
+  // Best effort: the order is already stored, and a retry would skip it as a
+  // duplicate without reaching this line, so don't let a KV error fail it.
+  // The cache expires on its own within 10 minutes anyway.
+  try {
+    await env.CACHE.delete('products:all');
+  } catch (error) {
+    console.warn(`Order ${order_id}: could not invalidate products cache`, error);
+  }
+
   // Send confirmation (simulated)
   await sendOrderConfirmation(order_id, customer_id, env);
 

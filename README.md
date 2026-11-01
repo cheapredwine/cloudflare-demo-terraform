@@ -29,7 +29,7 @@ Read that file plus its test to see the whole pattern.
 | **Load balancing** | [`load_balancer.tf`](./load_balancer.tf) | One HTTP monitor, **two pools**, active/passive failover, and a variable that takes the primary out of service | `load_balancer_stack`, `load_balancer_failover_toggle` |
 | **Workers (v5 pattern)** | [`workers.tf`](./workers.tf), [`routes.tf`](./routes.tf) | `cloudflare_worker` + `cloudflare_worker_version`; KV, R2, D1, Queue, service, AI, plain-text and **secret** bindings; Workers Logs; `depends_on` so routes wait for deployed code | `worker_bindings`, `worker_routes`, `admin_password_is_a_secret_binding` |
 | **AI Gateway** | [`ai-gateway.tf`](./ai-gateway.tf) | Gateway with caching, retries and logging; a Worker calls Workers AI through it | `ai_gateway` |
-| **Storage + queues** | [`storage.tf`](./storage.tf), [`queue-consumer.tf`](./queue-consumer.tf) | D1, KV, R2, Queue, and a first-class `cloudflare_queue_consumer` | `storage`, `queue_consumer` |
+| **Storage + queues** | [`storage.tf`](./storage.tf), [`queue-consumer.tf`](./queue-consumer.tf) | D1, KV, R2, Queue, and a first-class `cloudflare_queue_consumer`; one KV namespace shared by three Workers (the products API fills it, the order processor and admin panel invalidate it) | `storage`, `queue_consumer`, `worker_bindings` |
 | **v4 → v5 upgrade** | [`upgrade-from-v4.tf`](./upgrade-from-v4.tf) | `moved` blocks that rename DNS records in place (verified), and the `removed` + `import` route for Workers, which can't be moved across types | — |
 
 Every ruleset rule sets a `ref`, so rule IDs stay stable when you edit a
@@ -208,14 +208,20 @@ Every user-facing `.sh` script has a matching `.ps1`.
 |---|---|
 | `GET /api/products`, `GET /api/products/{id}` | List (KV-cached, `X-Products-Cache: HIT/MISS`) and fetch |
 | `POST`/`PUT`/`DELETE /api/products[/{id}]` | Create, update, delete (invalidates the cache) |
-| `POST /api/products/seed` | Load 5 sample products |
+| `POST /api/products/seed` | Load 5 sample products (idempotent: skips names already present) |
 | `GET /api/products/summary` | AI catalog summary through AI Gateway |
 | `POST /api/orders` | Queue an order for async processing |
 | `POST /api/upload` (multipart `file`) | Store a file in R2; returns its download `url` |
 | `GET /api/upload/<filename>` | Download a stored file (always as an attachment) |
 | `POST /api/auth/login`, `GET /api/auth/me` | Demo session auth (accepts any credentials) |
 
-Admin (`https://admin.<zone>`, Basic auth): `/`, `/api/stats`, `/api/products`, `/api/orders`, `POST /setup`.
+Admin (`https://admin.<zone>`, Basic auth): `/`, `/api/stats`, `/api/products`,
+`/api/orders`, `POST /setup` (create tables), `POST /reset` (empty every table;
+what `make reset` calls before re-seeding).
+
+Bad input gets a `400` with an `error` field; unexpected failures get a `500`
+with no details (they go to Workers Logs). Unknown or non-numeric product ids
+are `404` on every method.
 
 ## Design notes: read before you copy
 
@@ -260,6 +266,7 @@ This is a demo, and a few choices are deliberate shortcuts:
     - every test `run` (in `tests/` or the root) says `command = plan`, and every ruleset rule has a `ref`;
     - scripts, the Makefile and this README only name resource addresses that exist, and every test this README names exists;
     - `admin_allowlist_cidr` has no default, and the admin page escapes every value it puts into HTML;
+    - every binding in `workers.tf` is read (`env.<NAME>`) by the Worker it's attached to, so no block carries a binding its code ignores;
     - `.sh` / `.ps1` twins offer the same actions, `make tf-all` runs every demo, the secrets loaders behave the same, and the two schema copies match;
     - the Terraform version under Prerequisites matches `providers.tf`.
   - `terraform fmt` (tracked files only) and `terraform validate`.

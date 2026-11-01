@@ -406,14 +406,16 @@ async function getOrders(env) {
   }
 }
 
-// Empty every table (children first, for the foreign keys). The products API
-// re-fills and clears its KV cache when the demo seeds again.
+// Empty every table (children first, for the foreign keys), then drop the
+// products API's cached list (shared KV namespace, key products:all) so
+// GET /api/products doesn't keep serving the deleted catalog for 10 minutes.
 async function resetData(env) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM order_items'),
     env.DB.prepare('DELETE FROM orders'),
     env.DB.prepare('DELETE FROM products'),
   ]);
+  await env.CACHE.delete('products:all');
   return new Response(JSON.stringify({ message: 'All products and orders deleted' }), {
     headers: { 'Content-Type': 'application/json' }
   });
