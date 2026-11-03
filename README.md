@@ -10,10 +10,11 @@ rate limiting), CDN cache rules, load balancing with failover, Workers with
 every common binding type, and Workers AI through AI Gateway. Built on the
 **Cloudflare Terraform provider v5** (`~> 5.28`).
 
-**Status:** checked offline (`make verify`) and with a real read-only
-`terraform plan` against a live zone. It has **not** been applied end to end
-on provider v5, so the API may still reject something the plan accepted
-(the first apply is tracked in [`PENDING-REVIEW.md`](./PENDING-REVIEW.md)).
+**Status:** fully deployed on provider v5.28.1 (Terraform 1.11+). First apply
+completed 2026-11-02 on the `jsherron.com` test zone (enterprise plan). All
+resources created successfully: 4 Workers with every binding type (D1, KV, R2,
+Queue, AI Gateway, service bindings, secrets), WAF rulesets, cache rules, rate
+limiting, Load Balancer with failover pools, and AI Gateway.
 
 ## Find your topic
 
