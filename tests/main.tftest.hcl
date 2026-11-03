@@ -401,9 +401,12 @@ run "load_balancer_stack" {
     condition     = cloudflare_load_balancer_monitor.http.path == "/health" && cloudflare_load_balancer_monitor.http.type == "http" && contains(cloudflare_load_balancer_monitor.http.header["Host"], "app.demo-platform.example")
   }
 
+  # The monitor is defined but deliberately not attached: Cloudflare rejects
+  # RFC 5737 origins when health checks are on (see load_balancer.tf). Flip
+  # this assertion when the pools get real origins and the monitor is wired up.
   assert {
-    error_message = "both pools should share the one health monitor"
-    condition     = cloudflare_load_balancer_pool.primary.monitor == cloudflare_load_balancer_monitor.http.id && cloudflare_load_balancer_pool.secondary.monitor == cloudflare_load_balancer_monitor.http.id
+    error_message = "pools should leave the monitor unattached while the origins are RFC 5737 placeholders"
+    condition     = cloudflare_load_balancer_pool.primary.monitor == null && cloudflare_load_balancer_pool.secondary.monitor == null
   }
 
   assert {

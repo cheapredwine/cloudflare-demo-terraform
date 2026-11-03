@@ -7,19 +7,24 @@
 #   - A `precondition`: a lifecycle check on one resource that fails the plan
 #     with a clear message when an assumption about the inputs is wrong.
 #
-# Active/passive failover: one health monitor probes two origin pools; the
-# load balancer sends traffic to the first healthy pool in default_pools
-# order (steering_policy = "off"), and to fallback_pool if every pool is down.
+# Active/passive failover: the load balancer sends traffic to the first
+# available pool in default_pools order (steering_policy = "off"), and to
+# fallback_pool if every pool is down.
 #
 # Demo failover live:  terraform apply -var primary_origin_enabled=false
 # The primary pool's only origin is disabled, so the pool counts as down and
 # app.<zone> is served by the secondary pool. (Disabling is immediate; it
-# doesn't wait for open connections to finish.)
+# doesn't wait for open connections to finish.) This works without health
+# checks: the toggle is what takes the pool out of service.
 #
-# With the default RFC 5737 documentation IPs, the health checks fail on
-# BOTH pools, so the failover is only visible once origin_ipv4 and
-# secondary_origin_ipv4 point at real servers with a /health endpoint.
-# Monitors and pools are account-level; the load balancer itself is zone-level.
+# The health monitor is defined but NOT attached to either pool: Cloudflare
+# rejects the default RFC 5737 documentation IPs when health checks are on,
+# so unattached pools simply report healthy. Once origin_ipv4 and
+# secondary_origin_ipv4 point at real servers with a /health endpoint, add
+# `monitor = cloudflare_load_balancer_monitor.http.id` to both pools (and
+# flip the matching assertion in tests/main.tftest.hcl) for health-driven
+# failover. Monitors and pools are account-level; the load balancer itself
+# is zone-level.
 
 resource "cloudflare_load_balancer_monitor" "http" {
   account_id       = var.account_id

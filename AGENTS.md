@@ -77,8 +77,10 @@ secrets/              gitignored real secrets (README + *.example tracked)
 - Official managed-ruleset IDs (from Cloudflare's Terraform WAF docs): CF Managed
   `efb7b8c949ac4650a09736fc376e9aee`, OWASP Core `4814384a9e5d4991b9815dcfc25d2f1f`,
   rule 949110 `6179ae15870a4bb7b2d480d4843b323c`. Phase `http_request_firewall_managed`.
-- Default IPs are RFC 5737 documentation addresses: the LB monitor reports
-  every pool unhealthy until real origins are set.
+- Default IPs are RFC 5737 documentation addresses: Cloudflare rejects them
+  with health checks on, so the LB monitor exists but is not attached to the
+  pools (`load_balancer_stack` test asserts `monitor == null`). Re-attach it
+  once real origins are set.
 - Destroy doesn't revert `cloudflare_zone_setting`s or delete individual
   `cloudflare_worker_version`s: the provider's Delete only drops them from state.
 - `make verify` = lint (shellcheck, shfmt, node --check, py_compile) + config
@@ -87,8 +89,9 @@ secrets/              gitignored real secrets (README + *.example tracked)
 
 ## State of the project
 
-- Fully migrated to v5 (v5.28.1; Terraform >= 1.11, tested with 1.17). Never applied on v5;
-  a real read-only `plan` against the zone succeeds (all creates).
+- Fully migrated to v5 (v5.28.1; Terraform >= 1.11, tested with 1.17). First v5
+  apply landed 2026-11-02 (3 default rulesets imported, LB pools + LB, 4 Workers,
+  D1 schema, AI Gateway all created). `plan` against the zone is now a no-op.
 - The old v4 deployment's state is effectively empty, so the v4 → v5 renames
   don't matter for this account.
 - Demo zone: jsherron.com, test account. Never commit account or zone IDs.
