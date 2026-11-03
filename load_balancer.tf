@@ -45,7 +45,9 @@ resource "cloudflare_load_balancer_pool" "primary" {
   account_id  = var.account_id
   name        = "demo-platform-primary"
   description = "Primary origin (active)"
-  monitor     = cloudflare_load_balancer_monitor.http.id
+  # monitor omitted: Cloudflare rejects RFC 5737 documentation IPs with health
+  # checks enabled. Add `monitor = cloudflare_load_balancer_monitor.http.id`
+  # once origin_ipv4 points at a real server with a /health endpoint.
 
   origins = [
     {
@@ -62,7 +64,9 @@ resource "cloudflare_load_balancer_pool" "secondary" {
   account_id  = var.account_id
   name        = "demo-platform-secondary"
   description = "Secondary origin (passive failover)"
-  monitor     = cloudflare_load_balancer_monitor.http.id
+  # monitor omitted: Cloudflare rejects RFC 5737 documentation IPs with health
+  # checks enabled. Add `monitor = cloudflare_load_balancer_monitor.http.id`
+  # once secondary_origin_ipv4 points at a real server with a /health endpoint.
 
   origins = [
     {
