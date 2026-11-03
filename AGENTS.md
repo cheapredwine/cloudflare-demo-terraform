@@ -89,8 +89,9 @@ secrets/              gitignored real secrets (README + *.example tracked)
 
 ## State of the project
 
-- Fully migrated to v5 (v5.28.1; Terraform >= 1.11, tested with 1.17). Never applied on v5;
-  a real read-only `plan` against the zone succeeds (all creates).
+- Fully migrated to v5 (v5.28.1; Terraform >= 1.11, tested with 1.17). First v5
+  apply landed 2026-11-02 (3 default rulesets imported, LB pools + LB, 4 Workers,
+  D1 schema, AI Gateway all created). `plan` against the zone is now a no-op.
 - The old v4 deployment's state is effectively empty, so the v4 → v5 renames
   don't matter for this account.
 - Demo zone: jsherron.com, test account. Never commit account or zone IDs.
