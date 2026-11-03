@@ -188,10 +188,12 @@ seq 80 | xargs -P 20 -I{} curl -s -o /dev/null -w "%{http_code} " https://api.<z
 terraform apply -var primary_origin_enabled=false   # disable the primary origin; app.<zone> moves to secondary
 terraform apply                                     # restore
 ```
-The default origins are RFC 5737 documentation addresses, so the monitor
-reports every pool unhealthy and traffic goes to the fallback pool. Set
-`origin_ipv4` and `secondary_origin_ipv4` to real origins that serve `/health`
-to show healthy failover.
+The default origins are RFC 5737 documentation addresses, and Cloudflare
+rejects those when health checks are enabled, so the monitor is defined but
+not attached to either pool (both pools report healthy; no probing). Set
+`origin_ipv4` and `secondary_origin_ipv4` to real origins that serve `/health`,
+then add `monitor = cloudflare_load_balancer_monitor.http.id` back to both
+pools in `load_balancer.tf` to show health-driven failover.
 
 **AI Gateway:** `curl https://api.<zone>/api/products/summary` summarizes the
 catalog with Workers AI through `demo-ai-gateway`. A repeat call is a gateway
